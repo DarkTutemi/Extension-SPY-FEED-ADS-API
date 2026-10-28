@@ -750,21 +750,64 @@ select option {
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
 }
 
-/* Auto-scroll Status Badge */
-.log-autoscroll-badge {
+/* Auto-scroll Status Toggle Switch */
+.log-autoscroll-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 7px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(16, 185, 129, 0.4);
   padding: 3px 8px;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
   user-select: none;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
 }
-.log-autoscroll-badge:hover {
-  border-color: rgba(255, 255, 255, 0.2);
+.log-autoscroll-toggle:hover {
+  background: rgba(30, 41, 59, 0.95);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+.log-autoscroll-toggle:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-indigo);
+}
+.log-autoscroll-toggle.manual-mode {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+}
+.log-autoscroll-toggle.manual-mode:hover {
+  border-color: rgba(148, 163, 184, 0.45);
+  box-shadow: 0 0 10px rgba(148, 163, 184, 0.15);
+}
+
+.mini-toggle-track {
+  width: 26px;
+  height: 14px;
+  background: #10b981;
+  border-radius: 10px;
+  position: relative;
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  display: inline-block;
+}
+.log-autoscroll-toggle.manual-mode .mini-toggle-track {
+  background: #475569;
+}
+
+.mini-toggle-thumb {
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 14px;
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.log-autoscroll-toggle.manual-mode .mini-toggle-thumb {
+  left: 2px;
 }
 
 .scroll-status-dot {
@@ -773,7 +816,8 @@ select option {
   border-radius: 50%;
   background: #94a3b8;
   display: inline-block;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s;
+  flex-shrink: 0;
 }
 .scroll-status-dot.active {
   background: var(--accent-green);
@@ -783,6 +827,11 @@ select option {
 .scroll-status-dot.paused {
   background: var(--accent-amber);
   box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+}
+.scroll-status-dot.manual {
+  background: #64748b;
+  box-shadow: none;
+  animation: none;
 }
 
 @keyframes pulse-dot {

@@ -73,14 +73,22 @@ document.addEventListener('DOMContentLoaded', () => {
           if (selectAutoRefresh) {
             selectAutoRefresh.value = state.settings.autoRefreshMinutes !== undefined ? String(state.settings.autoRefreshMinutes) : '5';
           }
+          if (state.settings.autoScroll !== undefined) {
+            isAutoScrollEnabled = Boolean(state.settings.autoScroll);
+            updateAutoScrollBadgeUI();
+          }
         }
       }
     });
 
-    // Tải danh sách ads đã lưu
-    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs'], (res) => {
+    // Tải danh sách ads đã lưu và trạng thái tự cuộn
+    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled'], (res) => {
       adsList = res.matchedAdsList || [];
       logsList = res.adHunterLogs || [];
+      if (res.isAutoScrollEnabled !== undefined) {
+        isAutoScrollEnabled = Boolean(res.isAutoScrollEnabled);
+      }
+      updateAutoScrollBadgeUI();
       renderAdsList();
       renderLogsList();
     });
@@ -283,7 +291,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Lọc theo filter được chọn
     const filteredLogs = logsList.filter(log => {
       if (currentLogFilter === 'all') return true;
-      if (currentLogFilter === 'video') return log.mediaType === 'VIDEO';
+      const media = String(log.mediaType || '').toUpperCase();
+      if (currentLogFilter === 'video') return media === 'VIDEO';
+      if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
+      if (currentLogFilter === 'verified') return log.isVerified === true;
       if (currentLogFilter === 'matched') return log.isMatched === true;
       if (currentLogFilter === 'rejected') return log.isMatched === false;
       return true;
@@ -453,12 +464,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Auto-Scroll Controller cho Tab Nhật Ký Quét ──────────────────
   function updateAutoScrollBadgeUI() {
     if (!autoScrollDot || !autoScrollStatusText || !autoScrollBadge) return;
+    autoScrollBadge.setAttribute('aria-checked', String(isAutoScrollEnabled));
+
     if (!isAutoScrollEnabled) {
-      autoScrollDot.className = 'scroll-status-dot';
-      autoScrollStatusText.textContent = 'Tự cuộn: TẮT';
-      autoScrollBadge.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+      autoScrollBadge.classList.add('manual-mode');
+      autoScrollDot.className = 'scroll-status-dot manual';
+      autoScrollStatusText.textContent = 'Manual (Lăn tay)';
+      autoScrollBadge.style.borderColor = 'rgba(148, 163, 184, 0.25)';
+      autoScrollBadge.title = 'Chế độ Manual: Đang tắt tự cuộn (bạn có thể lăn chuột tự do). Bấm để chuyển sang Auto.';
       return;
     }
+
+    autoScrollBadge.classList.remove('manual-mode');
+    autoScrollBadge.title = 'Chế độ Auto: Đang tự cuộn theo log mới (tự dừng khi rê chuột). Bấm để gạt sang Manual.';
 
     if (isMouseInsideLogs || isUserInteractingWithLogs) {
       autoScrollDot.className = 'scroll-status-dot paused';
@@ -466,7 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
       autoScrollBadge.style.borderColor = 'rgba(245, 158, 11, 0.5)';
     } else {
       autoScrollDot.className = 'scroll-status-dot active';
-      autoScrollStatusText.textContent = 'Tự cuộn: BẬT';
+      autoScrollStatusText.textContent = 'Auto (Tự cuộn)';
       autoScrollBadge.style.borderColor = 'rgba(16, 185, 129, 0.5)';
     }
   }
@@ -498,6 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function onMouseInteractionDetected(reason) {
+    if (!isAutoScrollEnabled) return;
     isUserInteractingWithLogs = true;
     updateAutoScrollBadgeUI();
     clearTimeout(idleResumeTimer);
@@ -507,6 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function scheduleResumeAfter5s() {
+    if (!isAutoScrollEnabled) return;
     clearTimeout(idleResumeTimer);
     idleResumeTimer = setTimeout(() => {
       // Chỉ tự động trượt lại nếu chuột KHÔNG đang rê trong vùng logs
@@ -553,20 +573,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Bấm vào badge Tự cuộn để bật/tắt thủ công
+  // Bấm vào badge Tự cuộn để gạt giữa Auto và Manual
+  function toggleAutoScrollMode() {
+    isAutoScrollEnabled = !isAutoScrollEnabled;
+    chrome.storage.local.set({ isAutoScrollEnabled });
+
+    // Đồng bộ cập nhật cấu hình autoScroll vào background và content_script
+    chrome.runtime.sendMessage({
+      action: 'UPDATE_SETTINGS',
+      payload: { autoScroll: isAutoScrollEnabled }
+    });
+
+    if (isAutoScrollEnabled) {
+      isMouseInsideLogs = false;
+      isUserInteractingWithLogs = false;
+      clearTimeout(idleResumeTimer);
+      updateAutoScrollBadgeUI();
+      startAutoScrollLoop();
+      performAutoScrollStep();
+    } else {
+      stopAutoScrollLoop();
+      clearTimeout(idleResumeTimer);
+      updateAutoScrollBadgeUI();
+    }
+  }
+
   if (autoScrollBadge) {
-    autoScrollBadge.addEventListener('click', () => {
-      isAutoScrollEnabled = !isAutoScrollEnabled;
-      if (isAutoScrollEnabled) {
-        isMouseInsideLogs = false;
-        isUserInteractingWithLogs = false;
-        clearTimeout(idleResumeTimer);
-        updateAutoScrollBadgeUI();
-        startAutoScrollLoop();
-        performAutoScrollStep();
-      } else {
-        stopAutoScrollLoop();
-        updateAutoScrollBadgeUI();
+    autoScrollBadge.addEventListener('click', toggleAutoScrollMode);
+    autoScrollBadge.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleAutoScrollMode();
       }
     });
   }
@@ -702,9 +739,12 @@ document.addEventListener('DOMContentLoaded', () => {
       tabLogsBadge.textContent = logsList.length;
 
       // Nếu đang ở tab Logs, chèn ngay card log vào đầu danh sách (dòng trên cùng là mới nhất)
+      const media = String(log.mediaType || '').toUpperCase();
       const matchesFilter = (
         currentLogFilter === 'all' ||
-        (currentLogFilter === 'video' && log.mediaType === 'VIDEO') ||
+        (currentLogFilter === 'video' && media === 'VIDEO') ||
+        (currentLogFilter === 'photo' && (media === 'PHOTO' || media === 'CAROUSEL')) ||
+        (currentLogFilter === 'verified' && log.isVerified === true) ||
         (currentLogFilter === 'matched' && log.isMatched === true) ||
         (currentLogFilter === 'rejected' && log.isMatched === false)
       );

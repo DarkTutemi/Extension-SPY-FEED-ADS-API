@@ -160,14 +160,19 @@
         <div class="log-filter-pills">
           <button class="pill-btn active" data-log-filter="all">Tất cả</button>
           <button class="pill-btn" data-log-filter="video">Chỉ Video</button>
+          <button class="pill-btn" data-log-filter="photo">Chỉ hình</button>
+          <button class="pill-btn" data-log-filter="verified">Tích xanh</button>
           <button class="pill-btn" data-log-filter="matched">Thỏa mãn</button>
           <button class="pill-btn" data-log-filter="rejected">Bị loại</button>
         </div>
       </div>
       <div class="log-toolbar-row log-actions-row">
-        <div class="log-autoscroll-badge" id="autoScrollBadge" title="Tự động cuộn theo log mới. Khi rê chuột vào hoặc lăn chuột sẽ tạm dừng. Tự chạy lại sau 5s không chạm chuột.">
+        <div class="log-autoscroll-toggle" id="autoScrollBadge" role="switch" aria-checked="true" tabindex="0" title="Bấm để gạt chế độ: Auto (Tự cuộn) hoặc Manual (Lăn chuột thủ công)">
           <span class="scroll-status-dot active" id="autoScrollDot"></span>
-          <span class="scroll-status-text" id="autoScrollStatusText">Tự cuộn: BẬT</span>
+          <span class="scroll-status-text" id="autoScrollStatusText">Auto (Tự cuộn)</span>
+          <span class="mini-toggle-track" id="autoScrollSwitchTrack">
+            <span class="mini-toggle-thumb"></span>
+          </span>
         </div>
         <div class="log-actions">
           <button class="btn-download-log" id="btnDownloadLogText" title="Tải Logfile dạng Text (.log)">📥 Tải .log</button>
