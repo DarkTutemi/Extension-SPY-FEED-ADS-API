@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FB Video Ads Hunter</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="header">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </div>
+      <div class="brand-info">
+        <h1>Video Ads Hunter</h1>
+        <div class="badge-status" id="badgeStatus">
+          <span class="status-dot"></span>
+          <span class="status-text" id="statusText">Sẵn sàng</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-toggle-scan" id="btnToggleScan">
+      <span class="btn-icon" id="btnIcon">▶</span>
+      <span class="btn-label" id="btnLabel">Bắt đầu quét</span>
+    </button>
+  </header>
+
+  <!-- Metrics Bar -->
+  <section class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">Đã duyệt</span>
+      <span class="stat-val" id="statScanned">0</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Tổng Ads</span>
+      <span class="stat-val" id="statAdsFound">0</span>
+    </div>
+    <div class="stat-card highlight">
+      <span class="stat-label">Khớp bộ lọc</span>
+      <span class="stat-val" id="statMatched">0</span>
+    </div>
+  </section>
+
+  <!-- Filter & Settings Accordion -->
+  <section class="settings-panel">
+    <div class="settings-header" id="settingsToggle">
+      <span class="settings-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        Cấu hình tiêu chí lọc
+      </span>
+      <span class="settings-icon-arrow" id="settingsArrow">▼</span>
+    </div>
+
+    <div class="settings-body" id="settingsBody">
+      <div class="form-row">
+        <label for="inputMinLikes">Lượng Like tối thiểu:</label>
+        <div class="input-wrapper">
+          <input type="number" id="inputMinLikes" value="500" min="0" step="50">
+          <span class="unit">likes</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="selectRatio">Tỉ lệ Thảo luận (Ratio):</label>
+        <select id="selectRatio">
+          <option value="1/2" selected>1/2 (Sấp sỉ 50% Likes, ±20%)</option>
+          <option value="1/3">1/3 (Sấp sỉ 33% Likes, ±20%)</option>
+          <option value="1/4">1/4 (Sấp sỉ 25% Likes, ±20%)</option>
+          <option value="1/5">1/5 (Sấp sỉ 20% Likes, ±20%)</option>
+          <option value="none">Tắt lọc tỉ lệ (Bất kỳ tỉ lệ nào)</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="selectAutoRefresh">Tự động F5 làm mới Feed:</label>
+        <select id="selectAutoRefresh">
+          <option value="0">Không tự động F5 (Tắt)</option>
+          <option value="3">Sau mỗi 3 phút</option>
+          <option value="4">Sau mỗi 4 phút</option>
+          <option value="5" selected>Sau mỗi 5 phút (Khuyên dùng)</option>
+          <option value="6">Sau mỗi 6 phút</option>
+          <option value="7">Sau mỗi 7 phút</option>
+          <option value="8">Sau mỗi 8 phút</option>
+          <option value="9">Sau mỗi 9 phút</option>
+          <option value="10">Sau mỗi 10 phút</option>
+        </select>
+      </div>
+
+      <div class="filter-notes">
+        <div class="note-item">
+          <span class="check-icon">🔄</span>
+          <span><strong>Tự động làm mới:</strong> Tự F5 sau 3–10 phút để Facebook phân phối lô Ads mới</span>
+        </div>
+        <div class="note-item">
+          <span class="check-icon">✓</span>
+          <span><strong>Chống buff ảo:</strong> Bắt buộc Shares &le; 5 &times; Comments</span>
+        </div>
+        <div class="note-item">
+          <span class="check-icon">✓</span>
+          <span><strong>Không tích xanh:</strong> Loại bỏ thương hiệu lớn, tập trung dropship</span>
+        </div>
+        <div class="note-item">
+          <span class="check-icon">✓</span>
+          <span><strong>Format chuẩn:</strong> 100% Video Ads có kèm link Webstore</span>
+        </div>
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn-secondary" id="btnSaveSettings">Lưu cài đặt</button>
+        <button class="btn-danger" id="btnClearList">Xóa danh sách Ads</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tab Navigation Switcher -->
+  <nav class="tabs-nav">
+    <button class="tab-nav-btn active" data-tab="tab-ads">
+      <span>🎯 Ads Khớp Lọc</span>
+      <span class="tab-badge" id="tabAdsBadge">0</span>
+    </button>
+    <button class="tab-nav-btn" data-tab="tab-logs">
+      <span>📋 Nhật Ký Quét</span>
+      <span class="tab-badge log-badge" id="tabLogsBadge">0</span>
+    </button>
+  </nav>
+
+  <!-- TAB 1: Danh Sách Ads Khớp Bộ Lọc -->
+  <section class="tab-content active" id="tab-ads">
+    <div class="feed-header">
+      <div class="feed-title-wrap">
+        <h2>Kết Quả Bóc Tách</h2>
+        <span class="counter-badge" id="listCount">0</span>
+      </div>
+      <div class="export-actions">
+        <button class="btn-action" id="btnExportCSV" title="Xuất CSV">CSV</button>
+        <button class="btn-action" id="btnExportJSON" title="Xuất JSON">JSON</button>
+      </div>
+    </div>
+
+    <main class="ads-container" id="adsListContainer">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🎬</div>
+        <h3>Chưa có bài Video Ads nào khớp</h3>
+        <p>Mở trang Facebook Home Feed và bấm <strong>Bắt đầu quét</strong> để tự động bóc tách các bài post video ads thực chiến.</p>
+      </div>
+    </main>
+  </section>
+
+  <!-- TAB 2: Nhật Ký Quét & Audit Log Chi Tiết -->
+  <section class="tab-content" id="tab-logs">
+    <div class="log-toolbar">
+      <div class="log-toolbar-row">
+        <div class="log-filter-pills">
+          <button class="pill-btn active" data-log-filter="all">Tất cả</button>
+          <button class="pill-btn" data-log-filter="video">Chỉ Video</button>
+          <button class="pill-btn" data-log-filter="matched">Thỏa mãn</button>
+          <button class="pill-btn" data-log-filter="rejected">Bị loại</button>
+        </div>
+      </div>
+      <div class="log-toolbar-row log-actions-row">
+        <div class="log-autoscroll-badge" id="autoScrollBadge" title="Tự động cuộn theo log mới. Khi rê chuột vào hoặc lăn chuột sẽ tạm dừng. Tự chạy lại sau 5s không chạm chuột.">
+          <span class="scroll-status-dot active" id="autoScrollDot"></span>
+          <span class="scroll-status-text" id="autoScrollStatusText">Tự cuộn: BẬT</span>
+        </div>
+        <div class="log-actions">
+          <button class="btn-download-log" id="btnDownloadLogText" title="Tải Logfile dạng Text (.log)">📥 Tải .log</button>
+          <button class="btn-download-log" id="btnDownloadLogJson" title="Tải Logfile dạng JSON">JSON</button>
+          <button class="btn-clear-log" id="btnClearLogs" title="Xóa toàn bộ log">Xóa</button>
+        </div>
+      </div>
+    </div>
+
+    <main class="logs-container" id="logsListContainer">
+      <div class="empty-state" id="emptyLogState">
+        <div class="empty-icon">📝</div>
+        <h3>Chưa có bản ghi nhật ký nào</h3>
+        <p>Khi quét trên Facebook Newsfeed, từng bài Ads bắt được sẽ hiển thị chi tiết tại đây kèm lý do thỏa mãn hoặc bị loại.</p>
+      </div>
+    </main>
+  </section>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
