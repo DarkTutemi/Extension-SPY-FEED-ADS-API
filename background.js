@@ -355,23 +355,150 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
+    // Điền trực tiếp 4 Iframe Thẻ PCI (Shopify / Stripe) qua allFrames lọc sạch Honeypot
     case 'FILL_PCI_CARD_FRAMES': {
-      if (sender.tab?.id) {
-        const cardData = payload;
-        chrome.scripting.executeScript({
-          target: { tabId: sender.tab.id, allFrames: true },
-          func: (card) => {
-            const num = document.querySelector('input[name*="number" i], input[id*="number" i], input[autocomplete*="cc-number" i]');
-            if (num) { num.value = card.number; num.dispatchEvent(new Event('input', { bubbles: true })); }
-            const exp = document.querySelector('input[name*="exp" i], input[id*="expiry" i], input[autocomplete*="cc-exp" i]');
-            if (exp) { exp.value = card.expiry; exp.dispatchEvent(new Event('input', { bubbles: true })); }
-            const cvv = document.querySelector('input[name*="cvv" i], input[name*="cvc" i], input[id*="verification_value" i]');
-            if (cvv) { cvv.value = card.cvv; cvv.dispatchEvent(new Event('input', { bubbles: true })); }
-          },
-          args: [cardData]
-        }).catch(() => {});
+      const tabId = sender.tab?.id || activeStoreTabId;
+      const card = payload?.card || payload;
+      if (!tabId || !card) {
+        sendResponse({ ok: false });
+        return true;
       }
-      break;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: (c) => {
+          if (window.self === window.top) return;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          const setVal = (el, val) => {
+            if (!el || val === undefined || val === null) return;
+            el.focus();
+            el.click();
+            const prev = el.value;
+            if (setter) setter.call(el, String(val));
+            else el.value = String(val);
+            if (el._valueTracker) el._valueTracker.setValue(prev);
+            el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: String(val).slice(-1) || '0' }));
+            el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: String(val).slice(-1) || '0' }));
+            el.dispatchEvent(new Event('blur', { bubbles: true, composed: true }));
+          };
+
+          // 1. Xóa sạch toàn bộ Honeypot inputs
+          document.querySelectorAll('input[data-honeypot-field], input.visually-hidden').forEach((hp) => {
+            if (hp.value) {
+              const prev = hp.value;
+              if (setter) setter.call(hp, '');
+              else hp.value = '';
+              if (hp._valueTracker) hp._valueTracker.setValue(prev);
+              hp.dispatchEvent(new Event('input', { bubbles: true }));
+              hp.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          });
+
+          // 2. Điền đúng ô thật của Shopify PCI (kể cả data-current-field, id, name hoặc autocomplete)
+          const realInput = document.querySelector('input[data-current-field]:not([data-honeypot-field]):not(.visually-hidden)') ||
+            document.querySelector('input#number, input#expiry, input#verification_value, input#name, input[autocomplete^="cc-"]') ||
+            document.querySelector('input[placeholder*="Card number" i], input[placeholder*="Expiration" i], input[placeholder*="Security" i]');
+
+          if (realInput) {
+            let ft = (realInput.getAttribute('data-current-field') || realInput.id || realInput.name || '').toLowerCase();
+            const auto = (realInput.autocomplete || '').toLowerCase();
+            const ph = (realInput.placeholder || '').toLowerCase();
+
+            if (!ft || ft.startsWith('textfield') || ft.startsWith('input')) {
+              if (auto.includes('cc-number') || ph.includes('card') || ph.includes('thẻ')) ft = 'number';
+              else if (auto.includes('cc-exp') || ph.includes('exp') || ph.includes('mm')) ft = 'expiry';
+              else if (auto.includes('cc-csc') || ph.includes('cvv') || ph.includes('cvc') || ph.includes('security')) ft = 'verification_value';
+              else if (auto.includes('cc-name') || ph.includes('name')) ft = 'name';
+            }
+
+            if (ft.includes('number')) setVal(realInput, c.numberFormatted || c.number);
+            else if (ft.includes('expiry') || ft.includes('exp')) setVal(realInput, c.expString || c.expSpaced || c.expCombined);
+            else if (ft.includes('verification') || ft.includes('cvv') || ft.includes('cvc')) setVal(realInput, c.cvv);
+            else if (ft.includes('name')) setVal(realInput, c.holderName || 'Hannah Taylor');
+          }
+        },
+        args: [card]
+      }).then(() => sendResponse({ ok: true })).catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+
+    // Thực thi Trusted Hardware Click (qua chrome.debugger) vào nút ví PayPal để mở cửa sổ Popup đăng nhập PayPal thật
+    case 'TRIGGER_TRUSTED_PAYPAL_CLICK': {
+      const tabId = sender.tab?.id || activeStoreTabId;
+      const clickX = Number(payload?.x) || 0;
+      const clickY = Number(payload?.y) || 0;
+      if (!tabId) {
+        sendResponse({ ok: false, reason: 'Invalid tabId' });
+        return true;
+      }
+
+      (async () => {
+        const target = { tabId };
+        try {
+          await chrome.debugger.attach(target, '1.3');
+
+          const dispatchClickAt = async (cx, cy) => {
+            if (cx <= 0 || cy <= 0) return;
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+              type: 'mouseMoved',
+              x: cx,
+              y: cy,
+              button: 'left'
+            });
+            await new Promise((r) => setTimeout(r, 60));
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+              type: 'mousePressed',
+              x: cx,
+              y: cy,
+              button: 'left',
+              clickCount: 1
+            });
+            await new Promise((r) => setTimeout(r, 80));
+            await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+              type: 'mouseReleased',
+              x: cx,
+              y: cy,
+              button: 'left',
+              clickCount: 1
+            });
+          };
+
+          await dispatchClickAt(clickX, clickY);
+          console.log(`[Background] Đã kích hoạt Trusted Click mở cửa sổ Popup PayPal tại (${clickX}, ${clickY})`);
+          await new Promise((r) => setTimeout(r, 900));
+
+          // Kiểm tra xem popup PayPal đã mở chưa, nếu chưa bấm bồi lần 2
+          const tabsAfterFirst = await chrome.tabs.query({});
+          const hasPaypalPopup = tabsAfterFirst.some((t) => t.url && /paypal\.com/i.test(t.url));
+          if (!hasPaypalPopup) {
+            const freshCoords = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+              expression: `(() => {
+                const f = document.querySelector('iframe#PAY_WITH_PAYPAL-iframe, iframe[id*="PAY_WITH_PAYPAL" i], iframe[src*="wallet=PAY_WITH_PAYPAL" i], iframe#PAYPAL_EXPRESS-iframe, iframe[id*="PAYPAL" i]');
+                if (!f) return null;
+                document.documentElement.style.scrollBehavior = 'auto';
+                f.scrollIntoView({ behavior: 'instant', block: 'center' });
+                const r = f.getBoundingClientRect();
+                return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+              })()`,
+              returnByValue: true,
+              userGesture: true
+            }).catch(() => null);
+
+            const pt = freshCoords?.result?.value;
+            if (pt && pt.x > 0 && pt.y > 0) {
+              await dispatchClickAt(pt.x, pt.y);
+            }
+          }
+
+          await chrome.debugger.detach(target).catch(() => {});
+          sendResponse({ ok: true });
+        } catch (err) {
+          await chrome.debugger.detach(target).catch(() => {});
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
     }
 
     default:
