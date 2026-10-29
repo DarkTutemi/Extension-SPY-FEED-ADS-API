@@ -93,10 +93,38 @@
         </select>
       </div>
 
+      <div class="form-row">
+        <label for="selectWarmupEnabled">Chế độ Warmup & Super-Buyer:</label>
+        <select id="selectWarmupEnabled">
+          <option value="true" selected>BẬT (Tự động Nurturing & Pixel Checkout Flow)</option>
+          <option value="false">TẮT (Chỉ quét thụ động)</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="inputWarmupThreshold">Số bài trượt trước khi Warmup:</label>
+        <div class="input-wrapper">
+          <input type="number" id="inputWarmupThreshold" value="10" min="1" step="1">
+          <span class="unit">bài</span>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label for="inputWarmupWatchSeconds">Thời gian xem Video Warmup:</label>
+        <div class="input-wrapper">
+          <input type="number" id="inputWarmupWatchSeconds" value="15" min="5" step="5">
+          <span class="unit">giây</span>
+        </div>
+      </div>
+
       <div class="filter-notes">
         <div class="note-item">
           <span class="check-icon">🔄</span>
           <span><strong>Tự động làm mới:</strong> Tự F5 sau 3–10 phút để Facebook phân phối lô Ads mới</span>
+        </div>
+        <div class="note-item">
+          <span class="check-icon">🔥</span>
+          <span><strong>Warmup & Pixel Buyer:</strong> Sau 10 bài trượt tự mở bài 11; bài thỏa mãn tự chạy 7 bước checkout</span>
         </div>
         <div class="note-item">
           <span class="check-icon">✓</span>
@@ -106,15 +134,43 @@
           <span class="check-icon">✓</span>
           <span><strong>Không tích xanh:</strong> Loại bỏ thương hiệu lớn, tập trung dropship</span>
         </div>
-        <div class="note-item">
-          <span class="check-icon">✓</span>
-          <span><strong>Format chuẩn:</strong> 100% Video Ads có kèm link Webstore</span>
-        </div>
       </div>
 
       <div class="settings-actions">
         <button class="btn-secondary" id="btnSaveSettings">Lưu cài đặt</button>
         <button class="btn-danger" id="btnClearList">Xóa danh sách Ads</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- AI Vision & Solver Accordion (Mắt Thần AI Vision) -->
+  <section class="settings-panel ai-panel">
+    <div class="settings-header" id="aiSettingsToggle">
+      <span class="settings-title">
+        <span style="font-size: 13px;">👁️</span>
+        Mắt Thần AI Vision (5 Keys Gemini Pool + DeepSeek)
+      </span>
+      <span class="settings-icon-arrow" id="aiSettingsArrow">▼</span>
+    </div>
+
+    <div class="settings-body" id="aiSettingsBody">
+      <div class="form-col">
+        <label for="txtGeminiPool">Pool 5 Keys Gemini Vision (Mỗi dòng 1 key — Tự động xoay vòng Round-Robin):</label>
+        <textarea id="txtGeminiPool" rows="5" class="code-textarea" placeholder="Dán 5 keys Gemini, mỗi dòng 1 key..."></textarea>
+      </div>
+
+      <div class="form-col">
+        <label for="txtDeepseekKey">DeepSeek API Key (Suy luận DOM & Ánh xạ Form Checkout):</label>
+        <input type="text" id="txtDeepseekKey" class="code-input" value="" placeholder="sk-...">
+      </div>
+
+      <div class="form-col">
+        <label for="txtTwoCaptchaKey">2Captcha API Key (Giải hCaptcha / reCAPTCHA / Turnstile khi Thanh Toán):</label>
+        <input type="text" id="txtTwoCaptchaKey" class="code-input" value="" placeholder="Nhập 2Captcha API key...">
+      </div>
+
+      <div class="settings-actions">
+        <button class="btn-secondary" id="btnSaveAIKeys">Lưu cấu hình AI & Warmup</button>
       </div>
     </div>
   </section>

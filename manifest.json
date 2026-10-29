@@ -11,7 +11,8 @@
     "activeTab"
   ],
   "host_permissions": [
-    "*://*.facebook.com/*"
+    "*://*.facebook.com/*",
+    "<all_urls>"
   ],
   "side_panel": {
     "default_path": "sidepanel.html"
@@ -41,10 +42,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "injected.js"
+        "injected.js",
+        "store_actor.js",
+        "ai_helper.js"
       ],
       "matches": [
-        "*://*.facebook.com/*"
+        "<all_urls>"
       ]
     }
   ],

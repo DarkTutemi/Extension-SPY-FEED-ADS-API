@@ -12,17 +12,26 @@ let scannerState = {
   totalScanned: 0,
   totalAdsFound: 0,
   totalMatchedAds: 0,
+  totalWarmupRuns: 0,
+  consecutiveUnmatchedCount: 0,
   settings: {
     minLikes: 500,
     videoEngagementRatio: '1/2',
     customRatio: 0.5,
     autoScroll: true,
-    autoRefreshMinutes: 5
+    autoRefreshMinutes: 5,
+    warmupEnabled: true,
+    warmupThreshold: 10,
+    warmupWatchSeconds: 15,
+    geminiKeys: [],
+    deepseekKey: '',
+    twoCaptchaKey: ''
   }
 };
 
 let adLogsList = [];
 let autoRefreshTimer = null;
+let activeStoreTabId = null;
 
 // Hàm quản lý bộ đếm tự động F5 làm mới tab Facebook
 function restartAutoRefreshTimer() {
@@ -102,12 +111,40 @@ function executeAutoRefreshTab() {
   chrome.tabs.reload(targetTabId);
 }
 
-chrome.storage.local.get(['adHunterSettings', 'adHunterLogs'], (res) => {
+chrome.storage.local.get(['adHunterSettings', 'adHunterLogs', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey'], (res) => {
   if (res.adHunterSettings) {
     scannerState.settings = { ...scannerState.settings, ...res.adHunterSettings };
   }
+  if (res.geminiKeys && res.geminiKeys.length > 0) {
+    scannerState.settings.geminiKeys = res.geminiKeys;
+  }
+  if (res.deepseekKey) {
+    scannerState.settings.deepseekKey = res.deepseekKey;
+  }
+  if (res.twoCaptchaKey) {
+    scannerState.settings.twoCaptchaKey = res.twoCaptchaKey;
+  }
   if (res.adHunterLogs) {
     adLogsList = res.adHunterLogs;
+  }
+
+  // Tự động nạp từ local_keys.json (nếu có trên máy local của paneer)
+  if (!scannerState.settings.geminiKeys || scannerState.settings.geminiKeys.length === 0) {
+    fetch(chrome.runtime.getURL('local_keys.json'))
+      .then(r => r.json())
+      .then(localKeys => {
+        if (localKeys) {
+          if (localKeys.geminiKeys) scannerState.settings.geminiKeys = localKeys.geminiKeys;
+          if (localKeys.deepseekKey) scannerState.settings.deepseekKey = localKeys.deepseekKey;
+          if (localKeys.twoCaptchaKey) scannerState.settings.twoCaptchaKey = localKeys.twoCaptchaKey;
+          chrome.storage.local.set({
+            geminiKeys: scannerState.settings.geminiKeys,
+            deepseekKey: scannerState.settings.deepseekKey,
+            twoCaptchaKey: scannerState.settings.twoCaptchaKey
+          });
+        }
+      })
+      .catch(() => {});
   }
 });
 
@@ -213,6 +250,117 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (adLogsList.length > 300) adLogsList.pop();
       chrome.storage.local.set({ adHunterLogs: adLogsList });
       chrome.runtime.sendMessage({ action: 'ON_NEW_LOG_ENTRY', payload }).catch(() => {});
+      break;
+    }
+
+    // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt) ─────────────
+    case 'RUN_WARMUP_FLOW': {
+      const { postUrl, postId } = payload;
+      scannerState.totalWarmupRuns++;
+      scannerState.consecutiveUnmatchedCount = 0;
+      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} trên bài:`, postUrl);
+
+      chrome.tabs.create({ url: postUrl, active: false }, (warmupTab) => {
+        if (!warmupTab?.id) return;
+        const watchDuration = (scannerState.settings.warmupWatchSeconds || 15) * 1000;
+
+        // Đợi 3.5s cho tab tải rồi kích hoạt reaction và xem video
+        setTimeout(() => {
+          chrome.scripting.executeScript({
+            target: { tabId: warmupTab.id },
+            func: (pId) => {
+              // Thả reaction qua DOM hoặc postMessage cho injected.js
+              window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: 'LOVE' }, '*');
+              const video = document.querySelector('video');
+              if (video) video.play().catch(() => {});
+            },
+            args: [postId || '']
+          }).catch(() => {});
+        }, 3500);
+
+        // Đóng tab sau thời gian xem video giả lập
+        setTimeout(() => {
+          chrome.tabs.remove(warmupTab.id).catch(() => {});
+          console.log('[Background] Đã hoàn tất Warmup Cycle, quay lại Newsfeed.');
+        }, 3500 + watchDuration);
+      });
+      break;
+    }
+
+    // ── XỬ LÝ SUPER-BUYER 7 BƯỚC TRÊN WEBSTORE ──────────────────────
+    case 'RUN_STORE_FLOW': {
+      const { targetUrl, postUrl, postId } = payload;
+      console.log('[Background] Kích hoạt Super-Buyer Store Flow tới:', targetUrl);
+
+      // 1. Phản ứng yêu thích bài post trước khi mở link store
+      if (postId && scannerState.activeTabId) {
+        chrome.scripting.executeScript({
+          target: { tabId: scannerState.activeTabId },
+          func: (pId) => {
+            window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: 'LIKE' }, '*');
+          },
+          args: [postId]
+        }).catch(() => {});
+      }
+
+      // 2. Mở tab Webstore mới
+      chrome.tabs.create({ url: targetUrl, active: true }, (storeTab) => {
+        if (!storeTab?.id) return;
+        activeStoreTabId = storeTab.id;
+
+        // Đợi tab tải xong và inject store_actor.js
+        const listener = (tabId, info) => {
+          if (tabId === storeTab.id && info.status === 'complete') {
+            chrome.tabs.onUpdated.removeListener(listener);
+            console.log('[Background] Webstore đã tải xong, đang nạp store_actor.js...');
+            setTimeout(() => {
+              chrome.scripting.executeScript({
+                target: { tabId: storeTab.id },
+                files: ['store_actor.js']
+              }).catch(err => console.warn('[Background] Lỗi inject store_actor:', err));
+            }, 1000);
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+      break;
+    }
+
+    case 'STORE_FLOW_STEP_UPDATE': {
+      chrome.runtime.sendMessage({ action: 'ON_STORE_STEP_UPDATE', payload }).catch(() => {});
+      break;
+    }
+
+    case 'STORE_FLOW_COMPLETED': {
+      console.log('[Background] Nhận tín hiệu STORE_FLOW_COMPLETED. Đang đóng tab store và tái kích hoạt Newsfeed...');
+      if (activeStoreTabId) {
+        chrome.tabs.remove(activeStoreTabId).catch(() => {});
+        activeStoreTabId = null;
+      }
+      // Đưa tab Facebook Newsfeed trở lại Active
+      if (scannerState.activeTabId) {
+        chrome.tabs.update(scannerState.activeTabId, { active: true }).catch(() => {});
+      }
+      chrome.runtime.sendMessage({ action: 'ON_STORE_FLOW_FINISHED', payload }).catch(() => {});
+      break;
+    }
+
+    case 'FILL_PCI_CARD_FRAMES': {
+      if (sender.tab?.id) {
+        const cardData = payload;
+        chrome.scripting.executeScript({
+          target: { tabId: sender.tab.id, allFrames: true },
+          func: (card) => {
+            const num = document.querySelector('input[name*="number" i], input[id*="number" i], input[autocomplete*="cc-number" i]');
+            if (num) { num.value = card.number; num.dispatchEvent(new Event('input', { bubbles: true })); }
+            const exp = document.querySelector('input[name*="exp" i], input[id*="expiry" i], input[autocomplete*="cc-exp" i]');
+            if (exp) { exp.value = card.expiry; exp.dispatchEvent(new Event('input', { bubbles: true })); }
+            const cvv = document.querySelector('input[name*="cvv" i], input[name*="cvc" i], input[id*="verification_value" i]');
+            if (cvv) { cvv.value = card.cvv; cvv.dispatchEvent(new Event('input', { bubbles: true })); }
+          },
+          args: [cardData]
+        }).catch(() => {});
+      }
       break;
     }
 

@@ -174,6 +174,62 @@
       } catch (err) {
         console.warn('[Injected] Lỗi XHR Fast-Ahead:', err);
       }
+    } else if (event.data && event.data.type === 'TRIGGER_POST_REACTION') {
+      const { postId, reactionType = 'LIKE' } = event.data;
+      const dtsg = getDtsgToken();
+      const userId = getUserId();
+      if (!dtsg || !userId || !postId) return;
+
+      const reactionMap = {
+        LIKE: '115940658764963',
+        LOVE: '1624301844510860',
+        CARE: '413009949646487',
+        HAHA: '1198424286884029',
+        WOW: '1198424286884030'
+      };
+
+      const reactionId = reactionMap[reactionType] || reactionMap.LIKE;
+      // Trích xuất id bài post nếu là dạng url hoặc chuỗi
+      const cleanPostId = String(postId).replace(/[^\d]/g, '');
+      const feedbackId = btoa(`feedback:${cleanPostId}`);
+
+      const variables = JSON.stringify({
+        input: {
+          attribution_id_v2: "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start," + Date.now() + ",410822,,,",
+          feedback_id: feedbackId,
+          feedback_reaction_id: reactionId,
+          feedback_source: "OBJECT",
+          is_tracking_encrypted: true,
+          tracking: [],
+          session_id: "62dad94b-206d-4ddf-9ff7-6d6fbddd6c10",
+          actor_id: userId,
+          client_mutation_id: "1"
+        },
+        scale: 1,
+        useDefaultActor: false
+      });
+
+      const body = new URLSearchParams({
+        av: userId,
+        __user: userId,
+        fb_dtsg: dtsg,
+        fb_api_req_friendly_name: 'CometUFIFeedbackReactMutation',
+        doc_id: '27646120298312844',
+        variables: variables
+      });
+
+      fetch('https://www.facebook.com/api/graphql/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-FB-Friendly-Name': 'CometUFIFeedbackReactMutation'
+        },
+        body: body.toString()
+      }).then(r => r.json()).then(res => {
+        console.log('[Injected] Đã gửi CometUFIFeedbackReactMutation thành công:', reactionType, res);
+      }).catch(err => {
+        console.warn('[Injected] Lỗi gửi reaction:', err);
+      });
     }
   });
 

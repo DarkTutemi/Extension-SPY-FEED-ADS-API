@@ -23,6 +23,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSaveSettings = document.getElementById('btnSaveSettings');
   const btnClearList = document.getElementById('btnClearList');
 
+  const selectWarmupEnabled = document.getElementById('selectWarmupEnabled');
+  const inputWarmupThreshold = document.getElementById('inputWarmupThreshold');
+  const inputWarmupWatchSeconds = document.getElementById('inputWarmupWatchSeconds');
+
+  // AI Vision & Captcha Controls
+  const aiSettingsToggle = document.getElementById('aiSettingsToggle');
+  const aiSettingsBody = document.getElementById('aiSettingsBody');
+  const aiSettingsArrow = document.getElementById('aiSettingsArrow');
+  const txtGeminiPool = document.getElementById('txtGeminiPool');
+  const txtDeepseekKey = document.getElementById('txtDeepseekKey');
+  const txtTwoCaptchaKey = document.getElementById('txtTwoCaptchaKey');
+  const btnSaveAIKeys = document.getElementById('btnSaveAIKeys');
+
   // Tabs
   const tabNavBtns = document.querySelectorAll('.tab-nav-btn');
   const tabContents = document.querySelectorAll('.tab-content');
@@ -73,6 +86,24 @@ document.addEventListener('DOMContentLoaded', () => {
           if (selectAutoRefresh) {
             selectAutoRefresh.value = state.settings.autoRefreshMinutes !== undefined ? String(state.settings.autoRefreshMinutes) : '5';
           }
+          if (selectWarmupEnabled) {
+            selectWarmupEnabled.value = state.settings.warmupEnabled ? 'true' : 'false';
+          }
+          if (inputWarmupThreshold) {
+            inputWarmupThreshold.value = state.settings.warmupThreshold || 10;
+          }
+          if (inputWarmupWatchSeconds) {
+            inputWarmupWatchSeconds.value = state.settings.warmupWatchSeconds || 15;
+          }
+          if (txtGeminiPool && Array.isArray(state.settings.geminiKeys) && state.settings.geminiKeys.length > 0) {
+            txtGeminiPool.value = state.settings.geminiKeys.join('\n');
+          }
+          if (txtDeepseekKey && state.settings.deepseekKey) {
+            txtDeepseekKey.value = state.settings.deepseekKey;
+          }
+          if (txtTwoCaptchaKey && state.settings.twoCaptchaKey) {
+            txtTwoCaptchaKey.value = state.settings.twoCaptchaKey;
+          }
           if (state.settings.autoScroll !== undefined) {
             isAutoScrollEnabled = Boolean(state.settings.autoScroll);
             updateAutoScrollBadgeUI();
@@ -82,11 +113,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Tải danh sách ads đã lưu và trạng thái tự cuộn
-    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled'], (res) => {
+    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey'], (res) => {
       adsList = res.matchedAdsList || [];
       logsList = res.adHunterLogs || [];
       if (res.isAutoScrollEnabled !== undefined) {
         isAutoScrollEnabled = Boolean(res.isAutoScrollEnabled);
+      }
+      if (txtGeminiPool && Array.isArray(res.geminiKeys) && res.geminiKeys.length > 0) {
+        txtGeminiPool.value = res.geminiKeys.join('\n');
+      }
+      if (txtDeepseekKey && res.deepseekKey) {
+        txtDeepseekKey.value = res.deepseekKey;
+      }
+      if (txtTwoCaptchaKey && res.twoCaptchaKey) {
+        txtTwoCaptchaKey.value = res.twoCaptchaKey;
       }
       updateAutoScrollBadgeUI();
       renderAdsList();
@@ -635,28 +675,67 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 2. Mở / Đóng Accordion Cài Đặt
-  settingsToggle.addEventListener('click', () => {
-    settingsToggle.classList.toggle('open');
-    settingsBody.classList.toggle('show');
-  });
+  if (settingsToggle) {
+    settingsToggle.addEventListener('click', () => {
+      settingsToggle.classList.toggle('open');
+      settingsBody.classList.toggle('show');
+    });
+  }
 
-  // 3. Lưu Cài Đặt
+  // 2.1 Mở / Đóng Accordion Mắt Thần AI Vision
+  if (aiSettingsToggle && aiSettingsBody) {
+    aiSettingsToggle.addEventListener('click', () => {
+      aiSettingsToggle.classList.toggle('open');
+      aiSettingsBody.classList.toggle('show');
+    });
+  }
+
+  // 3. Lưu Cài Đặt Chung & Warmup
   btnSaveSettings.addEventListener('click', () => {
     const minLikes = parseInt(inputMinLikes.value, 10) || 500;
     const ratio = selectRatio.value;
     const autoRefreshMinutes = selectAutoRefresh ? parseInt(selectAutoRefresh.value, 10) : 5;
+    const warmupEnabled = selectWarmupEnabled ? (selectWarmupEnabled.value === 'true') : true;
+    const warmupThreshold = inputWarmupThreshold ? parseInt(inputWarmupThreshold.value, 10) || 10 : 10;
+    const warmupWatchSeconds = inputWarmupWatchSeconds ? parseInt(inputWarmupWatchSeconds.value, 10) || 15 : 15;
 
     const newSettings = {
       minLikes,
       videoEngagementRatio: ratio,
-      autoRefreshMinutes
+      autoRefreshMinutes,
+      warmupEnabled,
+      warmupThreshold,
+      warmupWatchSeconds
     };
 
     chrome.runtime.sendMessage({ action: 'UPDATE_SETTINGS', payload: newSettings }, () => {
-      btnSaveSettings.textContent = '✓ Đã lưu';
+      btnSaveSettings.textContent = '✓ Đã lưu cài đặt';
       setTimeout(() => { btnSaveSettings.textContent = 'Lưu cài đặt'; }, 1500);
     });
   });
+
+  // 3.1 Lưu Cấu hình Keys AI Vision & Solver
+  if (btnSaveAIKeys) {
+    btnSaveAIKeys.addEventListener('click', () => {
+      const rawPool = (txtGeminiPool?.value || '').trim();
+      const geminiKeys = rawPool.split('\n').map(k => k.trim()).filter(k => k.length > 0);
+      const deepseekKey = (txtDeepseekKey?.value || '').trim();
+      const twoCaptchaKey = (txtTwoCaptchaKey?.value || '').trim();
+
+      const aiSettings = {
+        geminiKeys,
+        deepseekKey,
+        twoCaptchaKey
+      };
+
+      chrome.runtime.sendMessage({ action: 'UPDATE_SETTINGS', payload: aiSettings }, () => {
+        chrome.storage.local.set(aiSettings, () => {
+          btnSaveAIKeys.textContent = '✓ Đã lưu Keys AI';
+          setTimeout(() => { btnSaveAIKeys.textContent = 'Lưu cấu hình AI & Warmup'; }, 1500);
+        });
+      });
+    });
+  }
 
   // 4. Xóa danh sách Ads
   btnClearList.addEventListener('click', () => {
@@ -761,6 +840,18 @@ document.addEventListener('DOMContentLoaded', () => {
             behavior: 'smooth'
           });
         }
+      }
+    } else if (message.action === 'ON_STORE_STEP_UPDATE') {
+      const { step, totalSteps, name, detail } = message.payload || {};
+      if (statusText) {
+        statusText.textContent = `[Bước ${step}/${totalSteps}] ${name}: ${detail || ''}`;
+      }
+    } else if (message.action === 'ON_STORE_FLOW_FINISHED') {
+      if (statusText) {
+        statusText.textContent = 'Hoàn tất quy trình Super-Buyer Pixel!';
+        setTimeout(() => {
+          statusText.textContent = isScanning ? 'Đang tự động quét & lọc Newsfeed...' : 'Hệ thống sẵn sàng';
+        }, 3000);
       }
     }
   });

@@ -29,9 +29,13 @@
     minLikes: 500,
     videoEngagementRatio: '1/2',
     customRatio: 0.5,
-    autoScroll: true
+    autoScroll: true,
+    warmupEnabled: true,
+    warmupThreshold: 10,
+    warmupWatchSeconds: 15
   };
 
+  let consecutiveUnmatchedVideoCount = 0;
   let totalScanned = 0;
   let totalAdsFound = 0;
   let totalMatchedAds = 0;
@@ -161,8 +165,30 @@
       payload: logEntry
     }).catch(() => {});
 
-    if (!isMatched) return null;
+    if (!isMatched) {
+      if (mediaType === 'VIDEO') {
+        consecutiveUnmatchedVideoCount++;
+        const threshold = settings.warmupThreshold || 10;
+        console.log(`[Warmup Tracker] Video Ads không khớp: ${consecutiveUnmatchedVideoCount}/${threshold}`);
 
+        if (settings.warmupEnabled !== false && consecutiveUnmatchedVideoCount >= threshold) {
+          console.log(`[Warmup Tracker] Đã đủ ${consecutiveUnmatchedVideoCount} bài không khớp. Kích hoạt Warmup Cycle trên bài thứ ${consecutiveUnmatchedVideoCount}...`);
+          consecutiveUnmatchedVideoCount = 0;
+          chrome.runtime.sendMessage({
+            action: 'RUN_WARMUP_FLOW',
+            payload: {
+              postUrl: postUrl || location.href,
+              postId: adId,
+              watchSeconds: settings.warmupWatchSeconds || 15
+            }
+          }).catch(() => {});
+        }
+      }
+      return null;
+    }
+
+    // Nếu bài thỏa mãn (isMatched === true):
+    consecutiveUnmatchedVideoCount = 0; // reset
     totalMatchedAds++;
     const matchedAd = {
       adId,
@@ -200,6 +226,19 @@
       action: 'AD_MATCHED',
       payload: matchedAd
     }).catch(() => {});
+
+    // Kích hoạt Super-Buyer Store Flow nếu có link webstore ngoài
+    if (targetUrl) {
+      console.log('[ContentScript] Bài thỏa mãn! Đang kích hoạt Super-Buyer Store Flow tới:', targetUrl);
+      chrome.runtime.sendMessage({
+        action: 'RUN_STORE_FLOW',
+        payload: {
+          targetUrl,
+          postUrl,
+          postId: adId
+        }
+      }).catch(() => {});
+    }
 
     return matchedAd;
   }

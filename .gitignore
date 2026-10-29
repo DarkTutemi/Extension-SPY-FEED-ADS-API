@@ -1,0 +1,6 @@
+# Local keys and configuration
+local_keys.json
+config.local.js
+*.local.*
+.DS_Store
+Thumbs.db

@@ -349,3 +349,49 @@ extension-find-ads/
 - **Tại Tab "Ads Khớp Lọc":** Xuất hiện ngay các bài Video Ads đạt chuẩn. Bấm **CSV** hoặc **JSON** để tải danh sách về cho đội Media / R&D sản phẩm.
 - **Tại Tab "Nhật Ký Quét":** Có thể bấm gạt **Manual** để tự do kéo chuột nghiên cứu lý do các bài bị loại hoặc bấm tab **"Chỉ hình"** / **"Tích xanh"** để phân tích đối thủ cạnh tranh.
 - Bấm **📥 Tải .log** để xuất báo cáo kiểm định chi tiết của toàn bộ phiên quét.
+
+---
+
+## 11. Hệ Thống Warmup Nuôi Tài Khoản & 7 Bước Super-Buyer Pixel
+
+### 11.1. Chu Kỳ Tương Tác Warmup (Khi Trượt Ngưỡng Lọc)
+- **Cơ chế kích hoạt:** Khi hệ thống quét liên tiếp `warmupThreshold` (mặc định 10 bài) video ads nhưng không thỏa mãn các tiêu chí lọc gắt gao (ví dụ bài không có link store ngoài, hoặc fanpage có tích xanh), hệ thống sẽ chọn bài video ad thứ 11 để thực hiện **Warmup Interaction**:
+  1. Mở bài post trong tab mới hoặc tương tác trực tiếp.
+  2. Bắn GraphQL mutation `CometUFIFeedbackReactMutation` (doc_id `27646120298312844`) thả reaction ngẫu nhiên (LIKE, LOVE, CARE).
+  3. Giữ tab xem video trong `warmupWatchSeconds` (mặc định 15 giây) để tạo tín hiệu người dùng thật (High Watch Time).
+  4. Đóng tab warmup và tiếp tục chu kỳ quét Newsfeed.
+
+### 11.2. Quy Trình 7 Bước Giả Lập Khách Hàng VIP (Pixel Super-Buyer Flow)
+Khi một bài Video Ad **thỏa mãn toàn bộ tiêu chí lọc**, hệ thống mở URL webstore ngoài và tự động kích hoạt kịch bản **Super-Buyer Pixel**:
+
+1. **Bước 1 — Phát Hiện Nền Tảng (Store Platform Detection):**
+   - Tự động nhận diện Shopify, WooCommerce, Magento, OpenCart, Wix, Funnelish thông qua `window.Shopify`, thẻ meta generator, `wp-content`, scripts đặc trưng.
+2. **Bước 2 — Giả Lập Lướt Web & Chọn Biến Thể (ViewContent & Variant Picking):**
+   - Cuộn tự nhiên xuống trang để kích hoạt sự kiện Facebook Pixel `ViewContent`.
+   - Tìm và chọn ngẫu nhiên biến thể (Size, Color, Model) thông qua swatch, radio button, hoặc dropdown select.
+3. **Bước 3 — Thêm Vào Giỏ & Tiến Hành Thanh Toán (AddToCart & InitiateCheckout):**
+   - Bấm nút *Add to Cart* hoặc *Buy It Now* để kích hoạt Pixel `AddToCart`.
+   - Tự động tick chấp thuận Điều khoản dịch vụ (*Terms & Conditions*) nếu có Cart Drawer.
+   - Bấm nút *Checkout* hoặc điều hướng thẳng đến `/checkout` để kích hoạt Pixel `InitiateCheckout`.
+4. **Bước 4 — Điền Thông Tin Khách Hàng Mỹ Hợp Chuẩn (US Shipping Data Generator):**
+   - Sử dụng `UltimateDataGenerator` sinh bộ thông tin khách hàng Mỹ thực tế: Name, Email Gmail chuẩn, Phone, Address, State và ZIP code khớp chuẩn 100% (ví dụ: `CA 90210`, `IL 60614`, `TX 77002`).
+   - Tự động bấm phím `Escape` sau khi điền địa chỉ để triệt tiêu gợi ý Google Places Autocomplete.
+   - Nếu gặp form tùy biến lạ, DeepSeek API sẽ tự động phân tích DOM và ánh xạ trường chuẩn.
+5. **Bước 5 — Giả Lập Thanh Toán Thẻ Tín Dụng (Credit Card & AddPaymentInfo):**
+   - Chọn phương thức thanh toán Credit Card, điền thông tin thẻ test vào form chính hoặc các iframe bảo mật PCI (Shopify Card Fields, Stripe).
+   - Bấm nút Thanh toán để kích hoạt sự kiện Pixel `AddPaymentInfo`.
+   - Tích hợp 2Captcha API tự động giải checkpoint nếu phát hiện reCAPTCHA hoặc hCaptcha.
+   - Đếm ngược 10 giây để Facebook Pixel ghi nhận trọn vẹn sự kiện.
+6. **Bước 6 — Giả Lập Cổng Thanh Toán PayPal (High-Intent Buyer Signal):**
+   - Chọn radio PayPal, kích hoạt click đáng tin cậy vào nút PayPal để mở popup đăng nhập chính thức.
+   - Đợi 10 giây giả lập đăng nhập để gửi tín hiệu người mua hàng giá trị cao về pixel.
+7. **Bước 7 — Hoàn Tất Quy Trình & Trở Về Facebook Feed:**
+   - Đóng an toàn tab webstore và focus lại tab Facebook để tiếp tục chu kỳ săn ads tiếp theo.
+
+---
+
+## 12. Mắt Thần AI Vision Pool (Round-Robin 5 Keys Gemini & DeepSeek)
+
+- **Gemini Vision 5-Key Pool:** Hệ thống tích hợp xoay vòng 5 API keys Gemini Vision tự động failover sang key kế tiếp khi gặp mã lỗi `429 Too Many Requests`.
+- **DeepSeek Integration:** Chuyên trách phân tích cấu trúc DOM các trang thanh toán phức tạp để ánh xạ chính xác các ô nhập liệu họ tên, địa chỉ và mã bưu điện.
+- **2Captcha Solver:** Tự động giải quyết các thử thách CAPTCHA xuất hiện tại cổng thanh toán nhằm đảm bảo quy trình nuôi pixel diễn ra liên tục 24/7.
