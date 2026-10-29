@@ -290,7 +290,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const watchDuration = (scannerState.settings.warmupWatchSeconds || 15);
 
         // Đợi 3s cho tab bài viết render xong rồi hiển thị HUD đếm ngược và phát video
-        setTimeout(() => {
+        setTimeout(async () => {
+          // 1. Tạo Banner HUD và phát video
           chrome.scripting.executeScript({
             target: { tabId: warmupTab.id },
             func: (pId, rType, rLabel, seconds) => {
@@ -315,10 +316,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               `;
               document.body.appendChild(banner);
 
-              // B. Thả Reaction trên tab mới qua injected.js
-              window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: rType }, '*');
-
-              // C. Cuộn tới khu vực bài viết & phát video
+              // B. Cuộn tới khu vực bài viết & phát video
               const video = document.querySelector('video');
               if (video) {
                 video.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -331,7 +329,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               const playOverlay = document.querySelector('[role="article"] div[aria-label*="Play" i], [role="article"] div[aria-label*="Phát" i], [role="dialog"] div[aria-label*="Play" i], [role="dialog"] div[aria-label*="Phát" i]');
               if (playOverlay) playOverlay.click();
 
-              // D. Đếm ngược từng giây trên HUD
+              // C. Đếm ngược từng giây trên HUD
               let remain = seconds;
               const timer = setInterval(() => {
                 remain--;
@@ -347,6 +345,106 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             },
             args: [postId || '', reactionType, reactionLabel, watchDuration]
           }).catch(() => {});
+
+          // 2. Kích hoạt Trusted Mouse Click thật sự vào nút LIKE hoặc LOVE
+          try {
+            const target = { tabId: warmupTab.id };
+            await chrome.debugger.attach(target, '1.3');
+
+            // Tìm tọa độ chính xác của nút Like trên bài viết
+            const coordsRes = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+              expression: `(() => {
+                const containers = [
+                  document.querySelector('[role="dialog"]'),
+                  document.querySelector('[role="article"]'),
+                  document.querySelector('[role="feed"]'),
+                  document.body
+                ].filter(Boolean);
+
+                for (const c of containers) {
+                  const btns = Array.from(c.querySelectorAll('div[role="button"], span[role="button"]'));
+                  const likeBtn = btns.find(b => {
+                    const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                    const hasLikeAria = (aria === 'like' || aria === 'thích' || aria === 'bày tỏ cảm xúc thích' || aria === 'react with like');
+                    return hasLikeAria && (b.querySelector('[data-ad-rendering-role="like_button"]') || b.querySelector('i') || b.innerText.match(/\\d+/));
+                  }) || btns.find(b => {
+                    const aria = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+                    return aria === 'like' || aria === 'thích';
+                  });
+
+                  if (likeBtn) {
+                    likeBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                    const r = likeBtn.getBoundingClientRect();
+                    return {
+                      x: Math.round(r.left + r.width / 2),
+                      y: Math.round(r.top + r.height / 2),
+                      aria: likeBtn.getAttribute('aria-label')
+                    };
+                  }
+                }
+                return null;
+              })()`,
+              returnByValue: true
+            });
+
+            const pt = coordsRes?.result?.value;
+            if (pt && pt.x > 0 && pt.y > 0) {
+              console.log(`[Warmup Actor] Đã tìm thấy nút Like bài viết tại (${pt.x}, ${pt.y})`);
+
+              // Di chuột tới nút Like để kích hoạt thanh Reaction Dock
+              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved', x: pt.x, y: pt.y, button: 'left'
+              });
+              await new Promise(r => setTimeout(r, 650));
+
+              if (reactionType === 'LOVE') {
+                // Tìm nút Love trong thanh reaction dock vừa xuất hiện
+                const loveCoordsRes = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+                  expression: `(() => {
+                    const loveBtn = document.querySelector('[aria-label="Love"], [aria-label="Yêu thích"], [aria-label*="Love" i], [aria-label*="Yêu thích" i]');
+                    if (loveBtn) {
+                      const r = loveBtn.getBoundingClientRect();
+                      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+                    }
+                    return null;
+                  })()`,
+                  returnByValue: true
+                });
+
+                const lovePt = loveCoordsRes?.result?.value;
+                const clickX = (lovePt && lovePt.x > 0) ? lovePt.x : pt.x;
+                const clickY = (lovePt && lovePt.y > 0) ? lovePt.y : pt.y;
+
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                  type: 'mouseMoved', x: clickX, y: clickY, button: 'left'
+                });
+                await new Promise(r => setTimeout(r, 60));
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                  type: 'mousePressed', x: clickX, y: clickY, button: 'left', clickCount: 1
+                });
+                await new Promise(r => setTimeout(r, 80));
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                  type: 'mouseReleased', x: clickX, y: clickY, button: 'left', clickCount: 1
+                });
+                console.log(`[Warmup Actor] Đã click Trusted Event vào nút LOVE tại (${clickX}, ${clickY})!`);
+              } else {
+                // LIKE: Click thẳng vào nút Like
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                  type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', clickCount: 1
+                });
+                await new Promise(r => setTimeout(r, 80));
+                await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                  type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', clickCount: 1
+                });
+                console.log(`[Warmup Actor] Đã click Trusted Event vào nút LIKE tại (${pt.x}, ${pt.y})!`);
+              }
+            }
+
+            await chrome.debugger.detach(target).catch(() => {});
+          } catch (err) {
+            console.warn('[Warmup Actor] Lỗi Trusted Click Reaction:', err.message);
+            await chrome.debugger.detach({ tabId: warmupTab.id }).catch(() => {});
+          }
         }, 3000);
 
         // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra
