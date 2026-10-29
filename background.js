@@ -268,33 +268,128 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ adHunterLogs: adLogsList });
       }
 
-      chrome.tabs.create({ url: postUrl, active: false }, (warmupTab) => {
-        if (!warmupTab?.id) return;
-        const watchDuration = (scannerState.settings.warmupWatchSeconds || 15) * 1000;
+      const originalTabId = sender.tab?.id || scannerState.activeTabId;
 
-        // Đợi 3.5s cho tab tải rồi kích hoạt reaction và xem video
+      // 1. Mở tab nổi bật lên phía trước (active: true) để người dùng nhìn thấy tận mắt
+      chrome.tabs.create({ url: postUrl, active: true }, (warmupTab) => {
+        if (!warmupTab?.id) return;
+        const watchDuration = (scannerState.settings.warmupWatchSeconds || 15);
+
+        // Đợi 3.5s cho tab bài viết render xong rồi kích hoạt tương tác Warmup trực quan
         setTimeout(() => {
           chrome.scripting.executeScript({
             target: { tabId: warmupTab.id },
-            func: (pId) => {
-              // Thả reaction qua DOM hoặc postMessage cho injected.js
-              window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: 'LOVE' }, '*');
-              const video = document.querySelector('video');
-              if (video) video.play().catch(() => {});
+            func: (pId, seconds) => {
+              // A. Tạo Banner HUD đếm ngược nổi trên đầu trang
+              const banner = document.createElement('div');
+              banner.id = 'fb-hunter-warmup-hud';
+              banner.style.cssText = `
+                position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+                background: linear-gradient(135deg, #0f172a, #1e1b4b);
+                border: 2px solid #f59e0b; border-radius: 12px;
+                padding: 10px 20px; z-index: 9999999;
+                color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
+                display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
+              `;
+              banner.innerHTML = `
+                <span style="font-size: 20px;">🔥</span>
+                <div>
+                  <div style="color: #f59e0b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Chế Độ Warmup Tự Động</div>
+                  <div id="warmupHudText">Đang bấm Thích & xem video (${seconds}s)...</div>
+                </div>
+              `;
+              document.body.appendChild(banner);
+
+              // B. Bấm Thích (Like) thật sự trên DOM với retry loop (chờ DOM hydrate)
+              let clickAttempts = 0;
+              const clickInterval = setInterval(() => {
+                clickAttempts++;
+                const els = Array.from(document.querySelectorAll('[aria-label*="Like" i], [aria-label*="Thích" i]'));
+                
+                // Kiểm tra xem bài đã được thả Like/Reaction chưa (tránh click nhầm thành gỡ like)
+                const alreadyLiked = els.some(el => {
+                  const label = (el.getAttribute('aria-label') || '').toLowerCase();
+                  return label.includes('gỡ') || label.includes('remove') || label.includes('unlike');
+                });
+                if (alreadyLiked) {
+                  console.log('[Warmup Actor] Bài viết đã được Thích từ trước.');
+                  clearInterval(clickInterval);
+                  return;
+                }
+
+                // Tìm nút Like chuẩn xác nhất trên Facebook UI (Tiếng Việt & Tiếng Anh)
+                const btn = els.find(el => {
+                  const role = el.getAttribute('role');
+                  const label = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                  return role === 'button' && (label === 'like' || label === 'thích' || label.startsWith('thích') || label.startsWith('like'));
+                }) || els.find(el => el.getAttribute('role') === 'button') ||
+                document.querySelector('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"], div[role="button"][aria-label*="Thích" i]');
+
+                if (btn) {
+                  btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  btn.focus();
+                  ['mouseover', 'mouseenter', 'mousedown', 'mouseup', 'click'].forEach(evtType => {
+                    btn.dispatchEvent(new MouseEvent(evtType, { bubbles: true, cancelable: true, view: window }));
+                  });
+                  btn.click();
+                  console.log('[Warmup Actor] Đã click nút Like thành công trên DOM!');
+                  clearInterval(clickInterval);
+                } else if (clickAttempts >= 10) {
+                  clearInterval(clickInterval);
+                }
+              }, 600);
+
+              // C. Phát video thật sự (liên tục kiểm tra và play video khi nạp xong)
+              let vidAttempts = 0;
+              const vidInterval = setInterval(() => {
+                vidAttempts++;
+                const video = document.querySelector('video');
+                const playOverlay = document.querySelector('div[aria-label*="Play" i], div[aria-label*="Phát" i], div[data-sigil="play-button"], div[role="button"][aria-label*="video" i]');
+                if (playOverlay) {
+                  playOverlay.click();
+                }
+                if (video) {
+                  video.muted = true; // muted để vượt qua chính sách autoplay của Chrome
+                  video.play().then(() => {
+                    video.muted = false; // bật lại tiếng nếu trình duyệt cho phép
+                  }).catch(() => {
+                    video.muted = true;
+                    video.play().catch(() => {});
+                  });
+                  if (!video.paused) clearInterval(vidInterval);
+                }
+                if (vidAttempts >= 8) clearInterval(vidInterval);
+              }, 1000);
+
+              // D. Đếm ngược từng giây trên HUD
+              let remain = seconds;
+              const timer = setInterval(() => {
+                remain--;
+                const hud = document.getElementById('warmupHudText');
+                if (hud) hud.textContent = `Đang xem video Warmup (${remain}s)...`;
+                if (remain <= 0) {
+                  clearInterval(timer);
+                  if (hud) hud.textContent = '✓ Hoàn tất Warmup! Đang quay lại Newsfeed...';
+                }
+              }, 1000);
             },
-            args: [postId || '']
+            args: [postId || '', watchDuration]
           }).catch(() => {});
         }, 3500);
 
-        // Đóng tab sau thời gian xem video giả lập
+        // Đóng tab sau thời gian xem video và trả focus về tab Newsfeed
         setTimeout(() => {
           chrome.tabs.remove(warmupTab.id).catch(() => {});
+          if (originalTabId) {
+            chrome.tabs.update(originalTabId, { active: true }).catch(() => {});
+          }
           console.log('[Background] Đã hoàn tất Warmup Cycle, quay lại Newsfeed.');
           chrome.runtime.sendMessage({
             action: 'ON_WARMUP_COMPLETED',
             payload: { postId, postUrl, totalWarmupRuns: scannerState.totalWarmupRuns }
           }).catch(() => {});
-        }, 3500 + watchDuration);
+        }, 3500 + (watchDuration * 1000));
       });
       break;
     }
