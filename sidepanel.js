@@ -337,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentLogFilter === 'verified') return log.isVerified === true;
       if (currentLogFilter === 'matched') return log.isMatched === true;
       if (currentLogFilter === 'rejected') return log.isMatched === false;
+      if (currentLogFilter === 'warmup') return log.isWarmup === true;
       return true;
     });
 
@@ -374,11 +375,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function createLogCardElement(log) {
     const card = document.createElement('div');
-    card.className = `log-card ${log.isMatched ? 'matched' : 'rejected'}`;
+    const isWarmup = Boolean(log.isWarmup);
+    card.className = `log-card ${log.isMatched ? 'matched' : 'rejected'}${isWarmup ? ' warmup-card' : ''}`;
 
     const mediaClass = log.mediaType === 'VIDEO' ? 'video' : 'photo';
-    const statusText = log.isMatched ? '✓ THỎA MÃN' : '✗ LOẠI BỎ';
-    const statusClass = log.isMatched ? 'matched' : 'rejected';
+    let statusText = log.isMatched ? '✓ THỎA MÃN' : '✗ LOẠI BỎ';
+    let statusClass = log.isMatched ? 'matched' : 'rejected';
+    if (isWarmup) {
+      statusText = '🔥 ĐÃ WARMUP';
+      statusClass = 'warmup';
+    }
 
     const checklistHTML = (log.auditChecks || []).map(check => `
       <div class="audit-item ${check.pass ? 'pass' : 'fail'}">
@@ -393,6 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <a href="${log.pageUrl || '#'}" target="_blank" class="log-page-title">${escapeHTML(log.pageName)}</a>
           <span class="log-media-tag ${mediaClass}">${log.mediaType}</span>
           ${log.isVerified ? '<span style="font-size:10px; color:#38bdf8;">[Tích xanh]</span>' : ''}
+          ${isWarmup ? '<span class="log-badge-warmup" title="Bài đã được hệ thống thực hiện chu kỳ tương tác Warmup (Reaction & xem video 15s)">🔥 Warmup</span>' : ''}
         </div>
         <span class="log-status-pill ${statusClass}">${statusText}</span>
       </div>
@@ -402,6 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <span>💬 ${(log.comments || 0).toLocaleString()}</span>
         <span>↗️ ${(log.shares || 0).toLocaleString()}</span>
         ${log.buttonText ? `<span style="color:#06b6d4;">[CTA: ${escapeHTML(log.buttonText)}]</span>` : ''}
+        ${isWarmup ? `<span style="color:#f59e0b; font-weight:600;">[Đã tương tác Warmup]</span>` : ''}
       </div>
 
       <div class="audit-checklist">
@@ -446,10 +454,27 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Chưa có bản ghi nhật ký nào để tải về!');
         return;
       }
-      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(logsList, null, 2));
+      const logsToExport = currentLogFilter === 'all' ? logsList : logsList.filter(log => {
+        const media = String(log.mediaType || '').toUpperCase();
+        if (currentLogFilter === 'video') return media === 'VIDEO';
+        if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
+        if (currentLogFilter === 'verified') return log.isVerified === true;
+        if (currentLogFilter === 'matched') return log.isMatched === true;
+        if (currentLogFilter === 'rejected') return log.isMatched === false;
+        if (currentLogFilter === 'warmup') return log.isWarmup === true;
+        return true;
+      });
+
+      if (logsToExport.length === 0) {
+        alert(`Không có bản ghi nào khớp với bộ lọc "${currentLogFilter}" để tải về!`);
+        return;
+      }
+
+      const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(logsToExport, null, 2));
       const downloadAnchor = document.createElement('a');
       downloadAnchor.setAttribute('href', dataStr);
-      downloadAnchor.setAttribute('download', `fb_ads_hunter_logs_${new Date().toISOString().slice(0, 10)}.json`);
+      const filterSuffix = currentLogFilter !== 'all' ? `_${currentLogFilter}` : '';
+      downloadAnchor.setAttribute('download', `fb_ads_hunter_logs${filterSuffix}_${new Date().toISOString().slice(0, 10)}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
@@ -457,15 +482,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function exportLogFileText() {
+    const logsToExport = currentLogFilter === 'all' ? logsList : logsList.filter(log => {
+      const media = String(log.mediaType || '').toUpperCase();
+      if (currentLogFilter === 'video') return media === 'VIDEO';
+      if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
+      if (currentLogFilter === 'verified') return log.isVerified === true;
+      if (currentLogFilter === 'matched') return log.isMatched === true;
+      if (currentLogFilter === 'rejected') return log.isMatched === false;
+      if (currentLogFilter === 'warmup') return log.isWarmup === true;
+      return true;
+    });
+
+    if (logsToExport.length === 0) {
+      alert(`Không có bản ghi nào khớp với bộ lọc "${currentLogFilter}" để tải về!`);
+      return;
+    }
+
     let logText = `======================================================================\n`;
-    logText += `   FB VIDEO ADS HUNTER - AUDIT LOGFILE\n`;
+    logText += `   FB VIDEO ADS HUNTER - AUDIT LOGFILE${currentLogFilter === 'warmup' ? ' [CÁC BÀI ĐÃ WARMUP]' : ''}\n`;
     logText += `   Thời gian xuất: ${new Date().toLocaleString('vi-VN')}\n`;
-    logText += `   Tổng số Ads kiểm tra: ${logsList.length}\n`;
+    logText += `   Bộ lọc hiện tại: ${currentLogFilter.toUpperCase()}\n`;
+    logText += `   Số bản ghi: ${logsToExport.length} / Tổng: ${logsList.length}\n`;
     logText += `======================================================================\n\n`;
 
-    logsList.forEach((log, index) => {
-      const statusStr = log.isMatched ? '[✓ THỎA MÃN ĐIỀU KIỆN]' : '[✗ BỊ LOẠI BỎ]';
+    logsToExport.forEach((log, index) => {
+      const statusStr = log.isMatched ? '[✓ THỎA MÃN ĐIỀU KIỆN]' : (log.isWarmup ? '[🔥 ĐÃ THỰC HIỆN WARMUP]' : '[✗ BỊ LOẠI BỎ]');
       logText += `[#${index + 1}] ${log.timestamp || ''} | ${statusStr}\n`;
+      if (log.isWarmup) {
+        logText += `TRẠNG THÁI WARMUP: ĐÃ TƯƠNG TÁC THÀNH CÔNG (Reaction LOVE/LIKE + Xem video 15s)\n`;
+      }
       logText += `Fanpage: ${log.pageName || 'Unknown'} (ID: ${log.adId || 'N/A'})\n`;
       logText += `Page URL: ${log.pageUrl || 'N/A'}\n`;
       logText += `FB Story Post: ${log.postUrl || 'N/A'}\n`;
@@ -483,8 +528,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', url);
+    const filterSuffix = currentLogFilter !== 'all' ? `_${currentLogFilter}` : '';
     const dateStr = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    downloadAnchor.setAttribute('download', `fb_ads_hunter_audit_${dateStr}.log`);
+    downloadAnchor.setAttribute('download', `fb_ads_hunter_audit${filterSuffix}_${dateStr}.log`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -860,7 +906,8 @@ document.addEventListener('DOMContentLoaded', () => {
         (currentLogFilter === 'photo' && (media === 'PHOTO' || media === 'CAROUSEL')) ||
         (currentLogFilter === 'verified' && log.isVerified === true) ||
         (currentLogFilter === 'matched' && log.isMatched === true) ||
-        (currentLogFilter === 'rejected' && log.isMatched === false)
+        (currentLogFilter === 'rejected' && log.isMatched === false) ||
+        (currentLogFilter === 'warmup' && log.isWarmup === true)
       );
 
       if (matchesFilter) {
@@ -875,6 +922,13 @@ document.addEventListener('DOMContentLoaded', () => {
             behavior: 'smooth'
           });
         }
+      }
+    } else if (message.action === 'ON_WARMUP_COMPLETED') {
+      const { postId, postUrl } = message.payload || {};
+      const target = logsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
+      if (target) {
+        target.isWarmup = true;
+        renderLogsList();
       }
     } else if (message.action === 'ON_STORE_STEP_UPDATE') {
       const { step, totalSteps, name, detail } = message.payload || {};

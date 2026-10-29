@@ -216,13 +216,14 @@ Nơi lưu trữ danh bạ các bài **Winning Video Ads** đã vượt qua toàn
 ### 6.2. Tab 2: 📋 Nhật Ký Quét (Audit Logs)
 Lưu lại toàn bộ các bài quảng cáo xuất hiện trên feed (kể cả bài bị loại), phục vụ công tác đối soát chi tiết.
 
-#### Thanh Toolbar 6 Bộ Lọc Pill:
+#### Thanh Toolbar 7 Bộ Lọc Pill:
 1. **`Tất cả` (All):** Xem toàn bộ các bài quảng cáo bắt được.
 2. **`Chỉ Video` (Video):** Chỉ hiển thị các bài quảng cáo định dạng Video.
 3. **`Chỉ hình` (Photo):** Chỉ hiển thị các bài quảng cáo dạng Ảnh đơn (`PHOTO`) hoặc Album xoay vòng (`CAROUSEL`).
 4. **`Tích xanh` (Verified):** Lọc riêng các bài quảng cáo thuộc các Fanpage có tích xanh (thương hiệu lớn).
 5. **`Thỏa mãn` (Matched):** Chỉ xem các bài vượt qua 5 tiêu chí.
 6. **`Bị loại` (Rejected):** Xem các bài không đạt kèm danh sách lý do chi tiết.
+7. **`Warmup` (Warmup):** Lọc riêng toàn bộ các bài quảng cáo đã được hệ thống kích hoạt chu kỳ tương tác **Warmup** (sau 10 bài trượt: bắn GraphQL reaction LOVE/LIKE và giữ tab xem video 15s). Người dùng có thể bấm **📥 Tải .log** hoặc **JSON** để xuất riêng tệp logfile các bài đã thực hiện Warmup.
 
 #### Checklist Thẩm Định Trực Quan Trên Từng Log Card:
 Mỗi card trong tab nhật ký đều in ra một checklist gồm 5 dòng:
@@ -231,6 +232,7 @@ Mỗi card trong tab nhật ký đều in ra một checklist gồm 5 dòng:
 - `✓ Fanpage chưa tích xanh (Shop thực chiến)` hoặc `✗ Fanpage có tích xanh (Thương hiệu lớn)`
 - `✓ Đủ Like (850 / cần >= 500)` hoặc `✗ Chưa đủ Like (42 / cần >= 500)`
 - `✓ Tương tác tự nhiên & Comment/Share chuẩn tỉ lệ 1/2` hoặc `✗ Tỉ lệ lệch / Buff share ảo`
+- *Nếu bài được thực hiện Warmup:* Xuất hiện thêm huy hiệu rực rỡ `🔥 ĐÃ WARMUP` và dòng kiểm tra `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 10 trượt: Thả Reaction & Xem 15s)`.
 
 ---
 
@@ -249,6 +251,7 @@ Bảng điều khiển được thiết kế theo phong cách hiện đại vớ
 │  [ 🎯 Ads Khớp Lọc (3) ]     [ 📋 Nhật Ký Quét (18) ]  │
 ├────────────────────────────────────────────────────────┤
 │ (Tất cả) (Chỉ Video) (Chỉ hình) (Tích xanh) (Thỏa mãn) │
+│ (Bị loại) (Warmup)                                     │
 ├────────────────────────────────────────────────────────┤
 │ [● Auto (Tự cuộn) [=O]]         [📥 .log] [JSON] [Xóa] │
 ├────────────────────────────────────────────────────────┤

@@ -805,6 +805,11 @@ select option {
   color: #fff;
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.35);
 }
+.pill-btn[data-log-filter="warmup"].active {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  border-color: #f59e0b;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+}
 
 /* Auto-scroll Status Toggle Switch */
 .log-autoscroll-toggle {
@@ -964,6 +969,10 @@ select option {
 .log-card.rejected {
   border-left: 3px solid var(--accent-rose);
 }
+.log-card.warmup-card {
+  border-left: 3px solid #f59e0b !important;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), var(--bg-secondary));
+}
 
 .log-card-header {
   display: flex;
@@ -1001,6 +1010,19 @@ select option {
   background: rgba(148, 163, 184, 0.15);
   color: var(--text-muted);
 }
+.log-badge-warmup {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  letter-spacing: 0.3px;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.45);
+}
 
 .log-status-pill {
   font-size: 10px;
@@ -1018,6 +1040,12 @@ select option {
   background: rgba(244, 63, 94, 0.12);
   color: var(--accent-rose);
   border: 1px solid rgba(244, 63, 94, 0.25);
+}
+.log-status-pill.warmup {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.25);
 }
 
 .log-metrics-summary {

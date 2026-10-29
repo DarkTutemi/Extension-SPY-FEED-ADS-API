@@ -261,6 +261,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       scannerState.consecutiveUnmatchedCount = 0;
       console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} trên bài:`, postUrl);
 
+      // Đánh dấu isWarmup = true trong adLogsList nếu tìm thấy log
+      const targetLog = adLogsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
+      if (targetLog) {
+        targetLog.isWarmup = true;
+        chrome.storage.local.set({ adHunterLogs: adLogsList });
+      }
+
       chrome.tabs.create({ url: postUrl, active: false }, (warmupTab) => {
         if (!warmupTab?.id) return;
         const watchDuration = (scannerState.settings.warmupWatchSeconds || 15) * 1000;
@@ -283,6 +290,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         setTimeout(() => {
           chrome.tabs.remove(warmupTab.id).catch(() => {});
           console.log('[Background] Đã hoàn tất Warmup Cycle, quay lại Newsfeed.');
+          chrome.runtime.sendMessage({
+            action: 'ON_WARMUP_COMPLETED',
+            payload: { postId, postUrl, totalWarmupRuns: scannerState.totalWarmupRuns }
+          }).catch(() => {});
         }, 3500 + watchDuration);
       });
       break;
