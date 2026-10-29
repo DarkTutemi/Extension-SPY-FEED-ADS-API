@@ -355,11 +355,14 @@ extension-find-ads/
 ## 11. Hệ Thống Warmup Nuôi Tài Khoản & 7 Bước Super-Buyer Pixel
 
 ### 11.1. Chu Kỳ Tương Tác Warmup (Khi Trượt Ngưỡng Lọc)
-- **Cơ chế kích hoạt:** Khi hệ thống quét liên tiếp `warmupThreshold` (mặc định 10 bài) video ads nhưng không thỏa mãn các tiêu chí lọc gắt gao (ví dụ bài không có link store ngoài, hoặc fanpage có tích xanh), hệ thống sẽ chọn bài video ad thứ 11 để thực hiện **Warmup Interaction**:
-  1. Mở bài post trong tab mới hoặc tương tác trực tiếp.
+- **Cơ chế kích hoạt & Quy tắc lọc:**
+  - Chế độ Warmup **CHỈ ÁP DỤNG & CHỈ ĐẾM CÁC BÀI VIDEO ADS CỦA FANPAGE CHƯA TÍCH XANH** (`mediaType === 'VIDEO' && !isVerified`).
+  - **Quy tắc bỏ qua Tích xanh:** Mọi bài Video Ads xuất phát từ Fanpage có tích xanh (`isVerified === true`) đều **HOÀN TOÀN KHÔNG ĐƯỢC ĐẾM**, đồng thời **KHÔNG BỊ RESET** bộ đếm (Ví dụ: Đã đếm được 8 bài video ads chưa tích xanh trượt tiêu chí, tiếp theo xuất hiện 2 bài video ads có tích xanh $\rightarrow$ Bộ đếm vẫn bảo lưu chính xác giá trị 8, tiếp tục chờ bài video ad chưa tích xanh tiếp theo để đếm thành 9).
+  - Khi bộ đếm tích lũy đủ `warmupThreshold` (mặc định 10 bài) video ads chưa tích xanh trượt tiêu chí: Hệ thống sẽ chọn chính bài video ad không tích xanh đó để thực hiện **Warmup Interaction**:
+  1. Mở bài post trong tab nền.
   2. Bắn GraphQL mutation `CometUFIFeedbackReactMutation` (doc_id `27646120298312844`) thả reaction ngẫu nhiên (LIKE, LOVE, CARE).
   3. Giữ tab xem video trong `warmupWatchSeconds` (mặc định 15 giây) để tạo tín hiệu người dùng thật (High Watch Time).
-  4. Đóng tab warmup và tiếp tục chu kỳ quét Newsfeed.
+  4. Đóng tab warmup, reset bộ đếm về 0 và tiếp tục chu kỳ quét Newsfeed.
 
 ### 11.2. Quy Trình 7 Bước Giả Lập Khách Hàng VIP (Pixel Super-Buyer Flow)
 Khi một bài Video Ad **thỏa mãn toàn bộ tiêu chí lọc**, hệ thống mở URL webstore ngoài và tự động kích hoạt kịch bản **Super-Buyer Pixel**:
