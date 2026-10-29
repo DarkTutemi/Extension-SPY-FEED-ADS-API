@@ -737,6 +737,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 3.2 Kích Hoạt Demo 7 Bước Super-Buyer Webstore
+  const btnRunDemoStoreFlow = document.getElementById('btnRunDemoStoreFlow');
+  const txtDemoStoreUrl = document.getElementById('txtDemoStoreUrl');
+  const demoFlowStatus = document.getElementById('demoFlowStatus');
+
+  if (btnRunDemoStoreFlow) {
+    btnRunDemoStoreFlow.addEventListener('click', () => {
+      const url = (txtDemoStoreUrl?.value || '').trim();
+      if (!url || !url.startsWith('http')) {
+        alert('Vui lòng nhập URL webstore hợp lệ (bắt đầu bằng http:// hoặc https://)');
+        return;
+      }
+
+      btnRunDemoStoreFlow.disabled = true;
+      btnRunDemoStoreFlow.textContent = '⏳ Đang khởi chạy 7 bước Pixel...';
+      if (demoFlowStatus) demoFlowStatus.textContent = 'Đang mở tab webstore và tiêm kịch bản Super-Buyer...';
+
+      chrome.runtime.sendMessage({
+        action: 'RUN_STORE_FLOW',
+        payload: {
+          targetUrl: url,
+          adId: `DEMO_${Date.now()}`
+        }
+      }, (res) => {
+        if (res && res.success) {
+          if (demoFlowStatus) demoFlowStatus.textContent = 'Đã mở tab store thành công! Đang tự động tương tác...';
+        } else {
+          btnRunDemoStoreFlow.disabled = false;
+          btnRunDemoStoreFlow.textContent = '⚡ Kích Hoạt 7 Bước Super-Buyer Ngay';
+          if (demoFlowStatus) demoFlowStatus.textContent = 'Lỗi khởi chạy: ' + (res?.error || 'Không rõ');
+        }
+      });
+    });
+  }
+
   // 4. Xóa danh sách Ads
   btnClearList.addEventListener('click', () => {
     if (confirm('Bạn có chắc muốn xóa sạch toàn bộ danh sách Ads đã lọc không?')) {
@@ -846,12 +881,22 @@ document.addEventListener('DOMContentLoaded', () => {
       if (statusText) {
         statusText.textContent = `[Bước ${step}/${totalSteps}] ${name}: ${detail || ''}`;
       }
+      if (demoFlowStatus) {
+        demoFlowStatus.textContent = `[Bước ${step}/${totalSteps}] ${name}: ${detail || ''}`;
+      }
     } else if (message.action === 'ON_STORE_FLOW_FINISHED') {
       if (statusText) {
         statusText.textContent = 'Hoàn tất quy trình Super-Buyer Pixel!';
         setTimeout(() => {
           statusText.textContent = isScanning ? 'Đang tự động quét & lọc Newsfeed...' : 'Hệ thống sẵn sàng';
         }, 3000);
+      }
+      if (demoFlowStatus) {
+        demoFlowStatus.textContent = '✓ Hoàn thành trọn vẹn 7 bước nuôi Pixel!';
+      }
+      if (btnRunDemoStoreFlow) {
+        btnRunDemoStoreFlow.disabled = false;
+        btnRunDemoStoreFlow.textContent = '⚡ Kích Hoạt 7 Bước Super-Buyer Ngay';
       }
     }
   });

@@ -55,16 +55,43 @@
 
   // Tiện ích gửi log tiến trình về Background & Side Panel
   function reportProgress(stepIndex, title, details = {}) {
-    console.log(`[Store Actor - Bước ${stepIndex}] ${title}`, details);
+    const detailStr = typeof details === 'string' ? details : (details.platform || details.message || '');
+    console.log(`[Store Actor - Bước ${stepIndex}/7] ${title}`, details);
     try {
       chrome.runtime.sendMessage({
         action: 'STORE_FLOW_STEP_UPDATE',
         payload: {
+          step: stepIndex,
           stepIndex,
+          totalSteps: 7,
+          name: title,
           title,
+          detail: detailStr,
           url: location.href,
           timestamp: Date.now(),
           details
+        }
+      });
+
+      chrome.runtime.sendMessage({
+        action: 'NEW_AD_LOG_ENTRY',
+        payload: {
+          adId: `PIXEL_STEP_${stepIndex}_${Date.now()}`,
+          timestamp: new Date().toLocaleTimeString('vi-VN'),
+          pageName: `🛒 WEBSTORE [Bước ${stepIndex}/7]: ${title}`,
+          pageUrl: location.href,
+          isVerified: false,
+          mediaType: 'STORE_PIXEL',
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          buttonText: `Bước ${stepIndex}`,
+          targetUrl: location.href,
+          isMatched: true,
+          auditChecks: [
+            { pass: true, desc: title },
+            { pass: true, desc: detailStr || location.hostname }
+          ]
         }
       });
     } catch (e) {}

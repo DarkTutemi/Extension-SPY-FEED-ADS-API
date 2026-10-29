@@ -32,6 +32,7 @@ let scannerState = {
 let adLogsList = [];
 let autoRefreshTimer = null;
 let activeStoreTabId = null;
+let storeTabUpdateListener = null;
 
 // Hàm quản lý bộ đếm tự động F5 làm mới tab Facebook
 function restartAutoRefreshTimer() {
@@ -308,22 +309,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!storeTab?.id) return;
         activeStoreTabId = storeTab.id;
 
-        // Đợi tab tải xong và inject store_actor.js
-        const listener = (tabId, info) => {
-          if (tabId === storeTab.id && info.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            console.log('[Background] Webstore đã tải xong, đang nạp store_actor.js...');
+        // Quản lý inject store_actor.js liên tục qua các lần chuyển trang (Product -> Cart -> Checkout)
+        if (storeTabUpdateListener) {
+          chrome.tabs.onUpdated.removeListener(storeTabUpdateListener);
+        }
+
+        storeTabUpdateListener = (tabId, info, tab) => {
+          if (tabId === activeStoreTabId && info.status === 'complete') {
+            console.log('[Background] Trang Webstore đã tải xong:', tab?.url, '-> Nạp store_actor.js...');
             setTimeout(() => {
               chrome.scripting.executeScript({
-                target: { tabId: storeTab.id },
+                target: { tabId: activeStoreTabId },
                 files: ['store_actor.js']
               }).catch(err => console.warn('[Background] Lỗi inject store_actor:', err));
-            }, 1000);
+            }, 1200);
           }
         };
-        chrome.tabs.onUpdated.addListener(listener);
+
+        chrome.tabs.onUpdated.addListener(storeTabUpdateListener);
+        sendResponse({ success: true, tabId: storeTab.id });
       });
-      break;
+      return true;
     }
 
     case 'STORE_FLOW_STEP_UPDATE': {
@@ -333,6 +339,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'STORE_FLOW_COMPLETED': {
       console.log('[Background] Nhận tín hiệu STORE_FLOW_COMPLETED. Đang đóng tab store và tái kích hoạt Newsfeed...');
+      if (storeTabUpdateListener) {
+        chrome.tabs.onUpdated.removeListener(storeTabUpdateListener);
+        storeTabUpdateListener = null;
+      }
       if (activeStoreTabId) {
         chrome.tabs.remove(activeStoreTabId).catch(() => {});
         activeStoreTabId = null;
