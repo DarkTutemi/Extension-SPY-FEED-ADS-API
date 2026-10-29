@@ -358,9 +358,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Điền trực tiếp 4 Iframe Thẻ PCI (Shopify / Stripe) qua allFrames lọc sạch Honeypot
     case 'FILL_PCI_CARD_FRAMES': {
       const tabId = sender.tab?.id || activeStoreTabId;
-      const card = payload?.card || payload;
+      const card = payload?.card || payload || message?.card;
       if (!tabId || !card) {
-        sendResponse({ ok: false });
+        sendResponse({ ok: false, error: 'No tabId or card data' });
         return true;
       }
       chrome.scripting.executeScript({

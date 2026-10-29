@@ -612,14 +612,16 @@
     fillCreditCardFieldsOnTopAndSameOrigin(card, card.holderName);
     await safeSendMessage({
       action: 'FILL_PCI_CARD_FRAMES',
-      card: { ...card }
+      card: { ...card },
+      payload: { card: { ...card } }
     });
     await sleep(900);
 
     fillCreditCardFieldsOnTopAndSameOrigin(card, card.holderName);
     await safeSendMessage({
       action: 'FILL_PCI_CARD_FRAMES',
-      card: { ...card }
+      card: { ...card },
+      payload: { card: { ...card } }
     });
     await sleep(1100);
 
