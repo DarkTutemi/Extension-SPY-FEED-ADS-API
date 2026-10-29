@@ -370,7 +370,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (hud) hud.textContent = `Đang xem video Warmup (${remain}s)...`;
                 if (remain <= 0) {
                   clearInterval(timer);
-                  if (hud) hud.textContent = '✓ Hoàn tất Warmup! Đang quay lại Newsfeed...';
+                  const bannerEl = document.getElementById('fb-hunter-warmup-hud');
+                  if (bannerEl) bannerEl.style.borderColor = '#10b981';
+                  if (hud) hud.innerHTML = '<span style="color:#34d399;">✓ Hoàn tất Warmup! Tab được giữ nguyên để bạn kiểm tra Reaction.</span>';
                 }
               }, 1000);
             },
@@ -378,13 +380,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }).catch(() => {});
         }, 3500);
 
-        // Đóng tab sau thời gian xem video và trả focus về tab Newsfeed
+        // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra reaction
         setTimeout(() => {
-          chrome.tabs.remove(warmupTab.id).catch(() => {});
-          if (originalTabId) {
-            chrome.tabs.update(originalTabId, { active: true }).catch(() => {});
-          }
-          console.log('[Background] Đã hoàn tất Warmup Cycle, quay lại Newsfeed.');
+          console.log('[Background] Đã hoàn tất Warmup Cycle, giữ nguyên tab để paneer kiểm tra reaction.');
           chrome.runtime.sendMessage({
             action: 'ON_WARMUP_COMPLETED',
             payload: { postId, postUrl, totalWarmupRuns: scannerState.totalWarmupRuns }
