@@ -793,6 +793,9 @@ select option {
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .pill-btn:hover {
   background: var(--bg-hover);
@@ -809,6 +812,24 @@ select option {
   background: linear-gradient(135deg, #f59e0b, #ef4444);
   border-color: #f59e0b;
   box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+}
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  padding: 1px 5px;
+  border-radius: 8px;
+  min-width: 14px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.pill-btn.active .pill-badge {
+  background: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
 }
 
 /* Auto-scroll Status Toggle Switch */

@@ -324,15 +324,54 @@ document.addEventListener('DOMContentLoaded', () => {
     return card;
   }
 
+  // Cập nhật số đếm trên các Pill Filter của Tab Nhật Ký Quét
+  function updateLogFilterPillCounts() {
+    let countAll = logsList.length;
+    let countVideo = 0;
+    let countPhoto = 0;
+    let countVerified = 0;
+    let countMatched = 0;
+    let countRejected = 0;
+    let countWarmup = 0;
+
+    for (let i = 0; i < logsList.length; i++) {
+      const log = logsList[i];
+      const media = String(log.mediaType || '').toUpperCase();
+      // Chỉ Video: bài video ads và KHÔNG có tích xanh
+      if (media === 'VIDEO' && log.isVerified !== true) countVideo++;
+      if (media === 'PHOTO' || media === 'CAROUSEL') countPhoto++;
+      if (log.isVerified === true) countVerified++;
+      if (log.isMatched === true) countMatched++;
+      if (log.isMatched === false) countRejected++;
+      if (log.isWarmup === true) countWarmup++;
+    }
+
+    const badgeAll = document.getElementById('pillBadgeAll');
+    if (badgeAll) badgeAll.textContent = countAll;
+    const badgeVideo = document.getElementById('pillBadgeVideo');
+    if (badgeVideo) badgeVideo.textContent = countVideo;
+    const badgePhoto = document.getElementById('pillBadgePhoto');
+    if (badgePhoto) badgePhoto.textContent = countPhoto;
+    const badgeVerified = document.getElementById('pillBadgeVerified');
+    if (badgeVerified) badgeVerified.textContent = countVerified;
+    const badgeMatched = document.getElementById('pillBadgeMatched');
+    if (badgeMatched) badgeMatched.textContent = countMatched;
+    const badgeRejected = document.getElementById('pillBadgeRejected');
+    if (badgeRejected) badgeRejected.textContent = countRejected;
+    const badgeWarmup = document.getElementById('pillBadgeWarmup');
+    if (badgeWarmup) badgeWarmup.textContent = countWarmup;
+  }
+
   // ── TAB 2: Render Nhật Ký Quét & Audit Log Chi Tiết ────────────────
   function renderLogsList() {
     tabLogsBadge.textContent = logsList.length;
+    updateLogFilterPillCounts();
 
     // Lọc theo filter được chọn
     const filteredLogs = logsList.filter(log => {
       if (currentLogFilter === 'all') return true;
       const media = String(log.mediaType || '').toUpperCase();
-      if (currentLogFilter === 'video') return media === 'VIDEO';
+      if (currentLogFilter === 'video') return media === 'VIDEO' && log.isVerified !== true;
       if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
       if (currentLogFilter === 'verified') return log.isVerified === true;
       if (currentLogFilter === 'matched') return log.isMatched === true;
@@ -456,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const logsToExport = currentLogFilter === 'all' ? logsList : logsList.filter(log => {
         const media = String(log.mediaType || '').toUpperCase();
-        if (currentLogFilter === 'video') return media === 'VIDEO';
+        if (currentLogFilter === 'video') return media === 'VIDEO' && log.isVerified !== true;
         if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
         if (currentLogFilter === 'verified') return log.isVerified === true;
         if (currentLogFilter === 'matched') return log.isMatched === true;
@@ -484,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function exportLogFileText() {
     const logsToExport = currentLogFilter === 'all' ? logsList : logsList.filter(log => {
       const media = String(log.mediaType || '').toUpperCase();
-      if (currentLogFilter === 'video') return media === 'VIDEO';
+      if (currentLogFilter === 'video') return media === 'VIDEO' && log.isVerified !== true;
       if (currentLogFilter === 'photo') return media === 'PHOTO' || media === 'CAROUSEL';
       if (currentLogFilter === 'verified') return log.isVerified === true;
       if (currentLogFilter === 'matched') return log.isMatched === true;
@@ -897,12 +936,13 @@ document.addEventListener('DOMContentLoaded', () => {
       logsList.unshift(log);
       if (logsList.length > 300) logsList.pop();
       tabLogsBadge.textContent = logsList.length;
+      updateLogFilterPillCounts();
 
       // Nếu đang ở tab Logs, chèn ngay card log vào đầu danh sách (dòng trên cùng là mới nhất)
       const media = String(log.mediaType || '').toUpperCase();
       const matchesFilter = (
         currentLogFilter === 'all' ||
-        (currentLogFilter === 'video' && media === 'VIDEO') ||
+        (currentLogFilter === 'video' && media === 'VIDEO' && log.isVerified !== true) ||
         (currentLogFilter === 'photo' && (media === 'PHOTO' || media === 'CAROUSEL')) ||
         (currentLogFilter === 'verified' && log.isVerified === true) ||
         (currentLogFilter === 'matched' && log.isMatched === true) ||
