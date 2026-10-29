@@ -254,148 +254,109 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
-    // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt) ─────────────
+    // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt: Thả LIKE/LOVE random & xem 15s) ──
     case 'RUN_WARMUP_FLOW': {
       const { postUrl, postId } = payload;
       scannerState.totalWarmupRuns++;
       scannerState.consecutiveUnmatchedCount = 0;
-      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} trên bài:`, postUrl);
+
+      // Random chọn 1 trong 2 loại Reaction: LIKE hoặc LOVE
+      const reactionType = Math.random() < 0.5 ? 'LIKE' : 'LOVE';
+      const reactionLabel = reactionType === 'LOVE' ? 'Yêu thích (❤️ Love)' : 'Thích (👍 Like)';
+      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}) trên bài:`, postUrl);
 
       // Đánh dấu isWarmup = true trong adLogsList nếu tìm thấy log
       const targetLog = adLogsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
       if (targetLog) {
         targetLog.isWarmup = true;
+        targetLog.warmupReaction = reactionType;
         chrome.storage.local.set({ adHunterLogs: adLogsList });
       }
 
-      const originalTabId = sender.tab?.id || scannerState.activeTabId;
+      // Thả Reaction trực tiếp qua GraphQL ở tab Newsfeed gốc (nơi injected.js đã sẵn sàng)
+      if (postId && scannerState.activeTabId) {
+        chrome.scripting.executeScript({
+          target: { tabId: scannerState.activeTabId },
+          func: (pId, rType) => {
+            window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: rType }, '*');
+          },
+          args: [postId, reactionType]
+        }).catch(() => {});
+      }
 
-      // 1. Mở tab nổi bật lên phía trước (active: true) để người dùng nhìn thấy tận mắt
+      // 1. Mở tab bài viết trực tiếp lên phía trước (active: true) để paneer nhìn thấy
       chrome.tabs.create({ url: postUrl, active: true }, (warmupTab) => {
         if (!warmupTab?.id) return;
         const watchDuration = (scannerState.settings.warmupWatchSeconds || 15);
 
-        // Đợi 3.5s cho tab bài viết render xong rồi kích hoạt tương tác Warmup trực quan
-        setTimeout(async () => {
-          // A. Chèn Banner HUD đếm ngược và kích hoạt phát video
+        // Đợi 3s cho tab bài viết render xong rồi hiển thị HUD đếm ngược và phát video
+        setTimeout(() => {
           chrome.scripting.executeScript({
             target: { tabId: warmupTab.id },
-            func: (seconds) => {
+            func: (pId, rType, rLabel, seconds) => {
+              // A. Tạo Banner HUD đếm ngược nổi trên đỉnh trang
               const banner = document.createElement('div');
               banner.id = 'fb-hunter-warmup-hud';
               banner.style.cssText = `
                 position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
                 background: linear-gradient(135deg, #0f172a, #1e1b4b);
                 border: 2px solid #f59e0b; border-radius: 12px;
-                padding: 10px 20px; z-index: 9999999;
+                padding: 10px 22px; z-index: 999999999;
                 color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
                 box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
                 display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
               `;
               banner.innerHTML = `
-                <span style="font-size: 20px;">🔥</span>
+                <span style="font-size: 22px;">🔥</span>
                 <div>
                   <div style="color: #f59e0b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Chế Độ Warmup Tự Động</div>
-                  <div id="warmupHudText">Đang bấm Thích & xem video (${seconds}s)...</div>
+                  <div id="warmupHudText">Đang thả ${rLabel} & xem video (${seconds}s)...</div>
                 </div>
               `;
               document.body.appendChild(banner);
 
-              // Phát video thật sự
-              let vidAttempts = 0;
-              const vidInterval = setInterval(() => {
-                vidAttempts++;
-                const video = document.querySelector('video');
-                const playOverlay = document.querySelector('div[aria-label*="Play" i], div[aria-label*="Phát" i], div[data-sigil="play-button"], div[role="button"][aria-label*="video" i]');
-                if (playOverlay) playOverlay.click();
-                if (video) {
-                  video.muted = true;
-                  video.play().then(() => { video.muted = false; }).catch(() => {
-                    video.muted = true;
-                    video.play().catch(() => {});
-                  });
-                  if (!video.paused) clearInterval(vidInterval);
-                }
-                if (vidAttempts >= 8) clearInterval(vidInterval);
-              }, 1000);
+              // B. Thả Reaction trên tab mới qua injected.js
+              window.postMessage({ type: 'TRIGGER_POST_REACTION', postId: pId, reactionType: rType }, '*');
 
-              // Đếm ngược từng giây trên HUD
+              // C. Cuộn tới khu vực bài viết & phát video
+              const video = document.querySelector('video');
+              if (video) {
+                video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                video.muted = true;
+                video.play().then(() => { video.muted = false; }).catch(() => {
+                  video.muted = true;
+                  video.play().catch(() => {});
+                });
+              }
+              const playOverlay = document.querySelector('[role="article"] div[aria-label*="Play" i], [role="article"] div[aria-label*="Phát" i], [role="dialog"] div[aria-label*="Play" i], [role="dialog"] div[aria-label*="Phát" i]');
+              if (playOverlay) playOverlay.click();
+
+              // D. Đếm ngược từng giây trên HUD
               let remain = seconds;
               const timer = setInterval(() => {
                 remain--;
                 const hud = document.getElementById('warmupHudText');
-                if (hud) hud.textContent = `Đang xem video Warmup (${remain}s)...`;
+                if (hud) hud.textContent = `Đang xem video Warmup (${remain}s) - Đã thả ${rLabel}...`;
                 if (remain <= 0) {
                   clearInterval(timer);
                   const bannerEl = document.getElementById('fb-hunter-warmup-hud');
                   if (bannerEl) bannerEl.style.borderColor = '#10b981';
-                  if (hud) hud.innerHTML = '<span style="color:#34d399;">✓ Hoàn tất Warmup! Tab được giữ nguyên để bạn kiểm tra Reaction.</span>';
+                  if (hud) hud.innerHTML = `<span style="color:#34d399;">✓ Hoàn tất Warmup! Đã thả ${rLabel}. Tab được giữ nguyên để bạn kiểm tra.</span>`;
                 }
               }, 1000);
             },
-            args: [watchDuration]
+            args: [postId || '', reactionType, reactionLabel, watchDuration]
           }).catch(() => {});
+        }, 3000);
 
-          // B. Kích hoạt Trusted Mouse Click (Input.dispatchMouseEvent) vào nút Like trên Facebook
-          try {
-            const target = { tabId: warmupTab.id };
-            await chrome.debugger.attach(target, '1.3');
-
-            // Tìm tọa độ nút Like trên DOM Facebook (kể cả trong popup modal hoặc bài viết)
-            const coordsRes = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
-              expression: `(() => {
-                const dialog = document.querySelector('[role="dialog"]') || document.body;
-                const els = Array.from(dialog.querySelectorAll('[aria-label*="Like" i], [aria-label*="Thích" i]'));
-                const alreadyLiked = els.some(el => {
-                  const l = (el.getAttribute('aria-label') || '').toLowerCase();
-                  return l.includes('gỡ') || l.includes('remove') || l.includes('unlike');
-                });
-                if (alreadyLiked) return { alreadyLiked: true };
-
-                const btn = dialog.querySelector('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"]') ||
-                            els.find(e => e.getAttribute('role') === 'button');
-                if (!btn) return null;
-
-                btn.scrollIntoView({ behavior: 'instant', block: 'center' });
-                const r = btn.getBoundingClientRect();
-                return {
-                  x: Math.round(r.left + r.width / 2),
-                  y: Math.round(r.top + r.height / 2)
-                };
-              })()`,
-              returnByValue: true
-            });
-
-            const coords = coordsRes?.result?.value;
-            if (coords && !coords.alreadyLiked && coords.x > 0 && coords.y > 0) {
-              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-                type: 'mouseMoved', x: coords.x, y: coords.y, button: 'left'
-              });
-              await new Promise(r => setTimeout(r, 60));
-              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-                type: 'mousePressed', x: coords.x, y: coords.y, button: 'left', clickCount: 1
-              });
-              await new Promise(r => setTimeout(r, 80));
-              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
-                type: 'mouseReleased', x: coords.x, y: coords.y, button: 'left', clickCount: 1
-              });
-              console.log(`[Warmup Actor] Đã kích hoạt Trusted Click vào nút Like tại (${coords.x}, ${coords.y})`);
-            }
-            await chrome.debugger.detach(target).catch(() => {});
-          } catch (err) {
-            console.warn('[Warmup Actor] Lỗi Trusted Click Like:', err.message);
-            await chrome.debugger.detach({ tabId: warmupTab.id }).catch(() => {});
-          }
-        }, 3500);
-
-        // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra reaction
+        // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra
         setTimeout(() => {
-          console.log('[Background] Đã hoàn tất Warmup Cycle, giữ nguyên tab để paneer kiểm tra reaction.');
+          console.log(`[Background] Đã hoàn tất Warmup Cycle (${reactionLabel}), giữ nguyên tab để paneer kiểm tra.`);
           chrome.runtime.sendMessage({
             action: 'ON_WARMUP_COMPLETED',
-            payload: { postId, postUrl, totalWarmupRuns: scannerState.totalWarmupRuns }
+            payload: { postId, postUrl, reactionType, totalWarmupRuns: scannerState.totalWarmupRuns }
           }).catch(() => {});
-        }, 3500 + (watchDuration * 1000));
+        }, 3000 + (watchDuration * 1000));
       });
       break;
     }
