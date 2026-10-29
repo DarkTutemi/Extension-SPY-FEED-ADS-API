@@ -276,11 +276,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const watchDuration = (scannerState.settings.warmupWatchSeconds || 15);
 
         // Đợi 3.5s cho tab bài viết render xong rồi kích hoạt tương tác Warmup trực quan
-        setTimeout(() => {
+        setTimeout(async () => {
+          // A. Chèn Banner HUD đếm ngược và kích hoạt phát video
           chrome.scripting.executeScript({
             target: { tabId: warmupTab.id },
-            func: (pId, seconds) => {
-              // A. Tạo Banner HUD đếm ngược nổi trên đầu trang
+            func: (seconds) => {
               const banner = document.createElement('div');
               banner.id = 'fb-hunter-warmup-hud';
               banner.style.cssText = `
@@ -301,59 +301,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               `;
               document.body.appendChild(banner);
 
-              // B. Bấm Thích (Like) thật sự trên DOM với retry loop (chờ DOM hydrate)
-              let clickAttempts = 0;
-              const clickInterval = setInterval(() => {
-                clickAttempts++;
-                const els = Array.from(document.querySelectorAll('[aria-label*="Like" i], [aria-label*="Thích" i]'));
-                
-                // Kiểm tra xem bài đã được thả Like/Reaction chưa (tránh click nhầm thành gỡ like)
-                const alreadyLiked = els.some(el => {
-                  const label = (el.getAttribute('aria-label') || '').toLowerCase();
-                  return label.includes('gỡ') || label.includes('remove') || label.includes('unlike');
-                });
-                if (alreadyLiked) {
-                  console.log('[Warmup Actor] Bài viết đã được Thích từ trước.');
-                  clearInterval(clickInterval);
-                  return;
-                }
-
-                // Tìm nút Like chuẩn xác nhất trên Facebook UI (Tiếng Việt & Tiếng Anh)
-                const btn = els.find(el => {
-                  const role = el.getAttribute('role');
-                  const label = (el.getAttribute('aria-label') || '').trim().toLowerCase();
-                  return role === 'button' && (label === 'like' || label === 'thích' || label.startsWith('thích') || label.startsWith('like'));
-                }) || els.find(el => el.getAttribute('role') === 'button') ||
-                document.querySelector('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"], div[role="button"][aria-label*="Thích" i]');
-
-                if (btn) {
-                  btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  btn.focus();
-                  ['mouseover', 'mouseenter', 'mousedown', 'mouseup', 'click'].forEach(evtType => {
-                    btn.dispatchEvent(new MouseEvent(evtType, { bubbles: true, cancelable: true, view: window }));
-                  });
-                  btn.click();
-                  console.log('[Warmup Actor] Đã click nút Like thành công trên DOM!');
-                  clearInterval(clickInterval);
-                } else if (clickAttempts >= 10) {
-                  clearInterval(clickInterval);
-                }
-              }, 600);
-
-              // C. Phát video thật sự (liên tục kiểm tra và play video khi nạp xong)
+              // Phát video thật sự
               let vidAttempts = 0;
               const vidInterval = setInterval(() => {
                 vidAttempts++;
                 const video = document.querySelector('video');
                 const playOverlay = document.querySelector('div[aria-label*="Play" i], div[aria-label*="Phát" i], div[data-sigil="play-button"], div[role="button"][aria-label*="video" i]');
-                if (playOverlay) {
-                  playOverlay.click();
-                }
+                if (playOverlay) playOverlay.click();
                 if (video) {
-                  video.muted = true; // muted để vượt qua chính sách autoplay của Chrome
-                  video.play().then(() => {
-                    video.muted = false; // bật lại tiếng nếu trình duyệt cho phép
-                  }).catch(() => {
+                  video.muted = true;
+                  video.play().then(() => { video.muted = false; }).catch(() => {
                     video.muted = true;
                     video.play().catch(() => {});
                   });
@@ -362,7 +319,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (vidAttempts >= 8) clearInterval(vidInterval);
               }, 1000);
 
-              // D. Đếm ngược từng giây trên HUD
+              // Đếm ngược từng giây trên HUD
               let remain = seconds;
               const timer = setInterval(() => {
                 remain--;
@@ -376,8 +333,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
               }, 1000);
             },
-            args: [postId || '', watchDuration]
+            args: [watchDuration]
           }).catch(() => {});
+
+          // B. Kích hoạt Trusted Mouse Click (Input.dispatchMouseEvent) vào nút Like trên Facebook
+          try {
+            const target = { tabId: warmupTab.id };
+            await chrome.debugger.attach(target, '1.3');
+
+            // Tìm tọa độ nút Like trên DOM Facebook (kể cả trong popup modal hoặc bài viết)
+            const coordsRes = await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+              expression: `(() => {
+                const dialog = document.querySelector('[role="dialog"]') || document.body;
+                const els = Array.from(dialog.querySelectorAll('[aria-label*="Like" i], [aria-label*="Thích" i]'));
+                const alreadyLiked = els.some(el => {
+                  const l = (el.getAttribute('aria-label') || '').toLowerCase();
+                  return l.includes('gỡ') || l.includes('remove') || l.includes('unlike');
+                });
+                if (alreadyLiked) return { alreadyLiked: true };
+
+                const btn = dialog.querySelector('div[role="button"][aria-label="Like"], div[role="button"][aria-label="Thích"]') ||
+                            els.find(e => e.getAttribute('role') === 'button');
+                if (!btn) return null;
+
+                btn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                const r = btn.getBoundingClientRect();
+                return {
+                  x: Math.round(r.left + r.width / 2),
+                  y: Math.round(r.top + r.height / 2)
+                };
+              })()`,
+              returnByValue: true
+            });
+
+            const coords = coordsRes?.result?.value;
+            if (coords && !coords.alreadyLiked && coords.x > 0 && coords.y > 0) {
+              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseMoved', x: coords.x, y: coords.y, button: 'left'
+              });
+              await new Promise(r => setTimeout(r, 60));
+              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mousePressed', x: coords.x, y: coords.y, button: 'left', clickCount: 1
+              });
+              await new Promise(r => setTimeout(r, 80));
+              await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
+                type: 'mouseReleased', x: coords.x, y: coords.y, button: 'left', clickCount: 1
+              });
+              console.log(`[Warmup Actor] Đã kích hoạt Trusted Click vào nút Like tại (${coords.x}, ${coords.y})`);
+            }
+            await chrome.debugger.detach(target).catch(() => {});
+          } catch (err) {
+            console.warn('[Warmup Actor] Lỗi Trusted Click Like:', err.message);
+            await chrome.debugger.detach({ tabId: warmupTab.id }).catch(() => {});
+          }
         }, 3500);
 
         // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra reaction
