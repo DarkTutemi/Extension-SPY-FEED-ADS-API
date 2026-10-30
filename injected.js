@@ -42,9 +42,14 @@
         // 1. Dạng Relay Incremental Delivery (@stream / @defer)
         if (parsed.data && parsed.data.node) {
           if (parsed.data.cursor) currentCursor = parsed.data.cursor;
+          const streamNode = parsed.data.node;
+          streamNode.__streamMeta = {
+            isAdAction: Boolean(parsed.data.sposnsor_new_distac_action || parsed.data.is_ad_eligible_for_ad_pod),
+            cursor: currentCursor
+          };
           window.postMessage({
             type: 'FB_GRAPHQL_FEED_CHUNK',
-            edges: [{ node: parsed.data.node }],
+            edges: [{ node: streamNode }],
             cursor: currentCursor
           }, '*');
         }

@@ -50,7 +50,92 @@
     }
   });
 
-  const pendingGraphqlAds = new Map(); // key: pageName.toLowerCase() -> graphqlData
+  // ── FEED POSTS REGISTRY (Đảm bảo liên kết FB Story Post 100% không bao giờ mất) ───────────
+  function cleanName(str) {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF\u034F\u200B-\u200D]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function decodeRelayId(relayId) {
+    if (!relayId || typeof relayId !== 'string') return null;
+    try {
+      const bin = atob(relayId);
+      if (bin.startsWith('S:_I')) {
+        const parts = bin.split(':');
+        const pageRaw = parts[1]?.slice(2);
+        const pageId = /^\d{5,}$/.test(pageRaw) ? pageRaw : null;
+        const postId = parts.slice(2).find(x => /^\d{5,}$/.test(x) || /^pfbid\w+$/.test(x));
+        if (pageId && postId) {
+          return { pageId, postId, url: `https://www.facebook.com/story.php?story_fbid=${postId}&id=${pageId}` };
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  const feedPostsRegistry = {
+    byPageName: new Map(), // key: cleanName(pageName) -> entry
+    byActorId: new Map(),  // key: String(actorId) -> entry
+    byPostId: new Map(),   // key: String(postId) -> entry
+    byNodeId: new Map()    // key: String(nodeId) -> entry
+  };
+
+  function registerFeedStoryNode(node) {
+    if (!node) return null;
+    const header = node.comet_sections?.header?.story;
+    const actor = header?.actors?.[0] || (Array.isArray(node.actors) ? node.actors[0] : {});
+    const pageName = actor.name || null;
+    const pageUrl = actor.url || null;
+    let actorId = actor.id || null;
+
+    let postId = node.post_id || node.legacy_fbid || null;
+    let storyUrl = null;
+
+    if (node.id) {
+      const decoded = decodeRelayId(node.id);
+      if (decoded) {
+        if (!actorId) actorId = decoded.pageId;
+        if (!postId) postId = decoded.postId;
+        storyUrl = decoded.url;
+      }
+    }
+
+    const validActor = actorId && /^\d{5,}$/.test(String(actorId));
+    const validPost = postId && (/^\d{5,}$/.test(String(postId)) || /^pfbid\w+$/.test(String(postId)));
+
+    if (!storyUrl && validActor && validPost) {
+      storyUrl = `https://www.facebook.com/story.php?story_fbid=${postId}&id=${actorId}`;
+    } else if (!storyUrl && validPost) {
+      storyUrl = `https://www.facebook.com/${postId}`;
+    }
+
+    if (!storyUrl && node.permalink_url) {
+      storyUrl = node.permalink_url;
+    }
+
+    const entry = {
+      postId,
+      actorId,
+      pageName,
+      pageUrl,
+      storyUrl,
+      permalinkUrl: node.permalink_url || null,
+      nodeId: node.id || null
+    };
+
+    if (pageName) feedPostsRegistry.byPageName.set(cleanName(pageName), entry);
+    if (actorId) feedPostsRegistry.byActorId.set(String(actorId), entry);
+    if (postId) feedPostsRegistry.byPostId.set(String(postId), entry);
+    if (node.id) feedPostsRegistry.byNodeId.set(String(node.id), entry);
+
+    return entry;
+  }
+
+  const pendingGraphqlAds = new Map(); // key: cleanName(pageName) & actorId -> graphqlData
   const pendingGraphqlAdsById = new Map(); // key: postId -> graphqlData
 
   // 3. Logic Đánh Giá Bộ Lọc 5 Tiêu Chí & Sinh Log
@@ -277,25 +362,21 @@
   async function resolveFbStoryUrl({ candidateUrl, nodeId, actorId, postId }) {
     // 1. Giải mã trực tiếp từ Relay Base64 (nodeId bắt đầu bằng 'UzpfST' tương đương 'S:_I<pageId>:<postId>')
     if (nodeId && typeof nodeId === 'string') {
-      try {
-        const decoded = atob(nodeId);
-        if (decoded.startsWith('S:_I')) {
-          const parts = decoded.split(':');
-          const page = parts[1]?.slice(2);
-          const post = parts.slice(2).find(x => /^\d+$/.test(x));
-          if (page && post) {
-            return `https://www.facebook.com/story.php?story_fbid=${post}&id=${page}`;
-          }
-        }
-      } catch (e) {}
+      const decoded = decodeRelayId(nodeId);
+      if (decoded?.url) return decoded.url;
     }
 
     // 2. Nếu đã có actorId (Page ID) và postId (hoặc pfbid)
-    if (actorId && postId && /^\d+$/.test(String(actorId)) && /^(\d+|pfbid\w+)$/.test(String(postId))) {
+    const validActor = actorId && /^\d{5,}$/.test(String(actorId));
+    const validPost = postId && (/^\d{5,}$/.test(String(postId)) || /^pfbid\w+$/.test(String(postId)));
+    if (validActor && validPost) {
       return `https://www.facebook.com/story.php?story_fbid=${postId}&id=${actorId}`;
     }
+    if (!validActor && validPost) {
+      return `https://www.facebook.com/${postId}`;
+    }
 
-    // 3. Phân giải từ URL bài viết / Reel (Fetch trang HTML với phiên cookie Facebook đang mở)
+    // 3. Phân giải từ URL bài viết / Reel
     if (candidateUrl && typeof candidateUrl === 'string') {
       try {
         const q = new URL(candidateUrl, location.href);
@@ -306,54 +387,108 @@
             return `https://www.facebook.com/story.php?story_fbid=${existingPost}&id=${existingPage}`;
           }
 
-          const r = await fetch(q.pathname + q.search, {
-            credentials: 'include',
-            headers: { Accept: 'text/html,application/xhtml+xml' }
-          });
-          const h = await r.text();
-
-          let post = null;
-          let page = null;
-
-          const fu = r.url || '';
-          const vid = (fu.match(/\/reel\/(\d+)/) || q.pathname.match(/\/(?:reel|videos)\/(?:[^/]+\/)*?(\d{6,})/) || [])[1] || q.searchParams.get('v') || q.searchParams.get('fbid');
-
-          // Trích xuất storyID trong HTML
-          const ids = [...new Set([...h.matchAll(/"storyID":"([A-Za-z0-9+/=]+)"/g)].map(m => {
-            try { return atob(m[1]); } catch(e) { return ''; }
-          }))].filter(s => /^S:_I\d+:/.test(s));
-
-          const fromStory = () => {
-            if (ids.length > 0) {
-              const p = ids[0].split(':');
-              page = p[1].slice(2);
-              post = p.slice(2).find(x => /^\d+$/.test(x));
-            }
-          };
-
-          if (!post && ids.length && !vid) fromStory();
-
-          // Trích xuất top_level_post_id và content_owner_id_new
-          if (!post) {
-            const T = [...h.matchAll(/\\*"top_level_post_id\\*":\\*"(\d+)\\*",\\*"content_owner_id_new\\*":\\*"?(\d+)([^]{0,400})/g)].map(m => ({
-              post: m[1],
-              page: m[2],
-              vid: (m[3].match(/video_id\\*":\\*"?(\d+)/) || [])[1]
-            }));
-            const t = vid ? (T.find(x => x.vid === vid || x.post === vid)) : T[0];
-            if (t) {
-              post = t.post;
-              page = t.page;
-            }
+          if (q.pathname.includes('/posts/') || q.pathname.includes('/reel/')) {
+            return q.origin + q.pathname;
+          }
+          if (q.pathname.includes('/watch') && q.searchParams.has('v')) {
+            return `https://www.facebook.com/watch/?v=${q.searchParams.get('v')}`;
+          }
+          if (q.pathname.includes('/photo') && q.searchParams.has('fbid')) {
+            return `https://www.facebook.com/photo/?fbid=${q.searchParams.get('fbid')}`;
           }
 
-          if (!post && ids.length) fromStory();
-
-          if (post && page) {
-            return `https://www.facebook.com/story.php?story_fbid=${post}&id=${page}`;
-          }
+          return candidateUrl;
         }
       } catch (err) {}
+    }
+
+    return null;
+  }
+
+  // 3c. Trích xuất Post URL từ DOM Card (Không phụ thuộc vào GraphQL hay React Fiber)
+  function extractPostUrlFromDomCard(card, { pageId, pageName, pageUrl }) {
+    if (!card) return null;
+    const anchors = Array.from(card.querySelectorAll('a'));
+    const hrefs = anchors.map(a => a.href).filter(Boolean);
+
+    // 1. Quét các liên kết trực tiếp bài viết / Reel / Watch / Photo / Permalink
+    for (const h of hrefs) {
+      if (/story_fbid=|\/posts\/|\/permalink\.php|\/reel\/\d|\/watch\/?\?v=|\/photo\/?\?fbid=|video\.php\?v=/.test(h)) {
+        try {
+          const u = new URL(h, location.href);
+          if (u.pathname.includes('/posts/') || u.pathname.includes('/reel/')) {
+            return u.origin + u.pathname;
+          }
+          if (u.searchParams.has('story_fbid') && u.searchParams.has('id')) {
+            return `https://www.facebook.com/story.php?story_fbid=${u.searchParams.get('story_fbid')}&id=${u.searchParams.get('id')}`;
+          }
+          if (u.pathname.includes('/watch') && u.searchParams.has('v')) {
+            return `https://www.facebook.com/watch/?v=${u.searchParams.get('v')}`;
+          }
+          if (u.pathname.includes('/photo') && u.searchParams.has('fbid')) {
+            return `https://www.facebook.com/photo/?fbid=${u.searchParams.get('fbid')}`;
+          }
+          return u.origin + u.pathname;
+        } catch(e) {
+          return h;
+        }
+      }
+    }
+
+    // 2. Trích xuất từ Comment Anchors (chứa /reel/ hoặc comment_id Base64 mã hóa postId)
+    for (const h of hrefs) {
+      const reelMatch = h.match(/\/reel\/(\d+)/);
+      if (reelMatch && reelMatch[1]) {
+        return `https://www.facebook.com/reel/${reelMatch[1]}`;
+      }
+
+      if (h.includes('comment_id=')) {
+        try {
+          const u = new URL(h, location.href);
+          const rawCid = u.searchParams.get('comment_id');
+          if (rawCid) {
+            let decoded = '';
+            try { decoded = atob(rawCid); } catch(e) {}
+            const m = decoded.match(/comment:(\d+)_/);
+            if (m && m[1]) {
+              const extractedPostId = m[1];
+              if (pageId) {
+                return `https://www.facebook.com/story.php?story_fbid=${extractedPostId}&id=${pageId}`;
+              }
+              if (pageUrl && !pageUrl.includes('profile.php')) {
+                const slug = pageUrl.split('facebook.com/')[1]?.split('?')[0]?.replace(/\//g, '');
+                if (slug) return `https://www.facebook.com/${slug}/posts/${extractedPostId}`;
+              }
+              return `https://www.facebook.com/${extractedPostId}`;
+            }
+          }
+        } catch(e) {}
+      }
+    }
+
+    // 3. Trích xuất Video ID từ thuộc tính data-video-id của thẻ video
+    const videoEl = card.querySelector('video') || card.querySelector('[data-video-id]');
+    const videoId = videoEl?.getAttribute('data-video-id') || null;
+    if (videoId && /^\d+$/.test(videoId)) {
+      if (pageId) {
+        return `https://www.facebook.com/story.php?story_fbid=${videoId}&id=${pageId}`;
+      }
+      return `https://www.facebook.com/watch/?v=${videoId}`;
+    }
+
+    // 4. Tìm bất kỳ ID số dài nào (>12 số) trong các liên kết trên card
+    if (pageId) {
+      for (const h of hrefs) {
+        const numMatch = h.match(/[?&](?:fbid|story_fbid|v|id)=(\d{10,})/);
+        if (numMatch && numMatch[1] && numMatch[1] !== pageId) {
+          return `https://www.facebook.com/story.php?story_fbid=${numMatch[1]}&id=${pageId}`;
+        }
+      }
+    }
+
+    // 5. Dự phòng an toàn: Sử dụng URL Fanpage kèm anchor bài viết
+    if (pageUrl) {
+      return pageUrl;
     }
 
     return null;
@@ -602,17 +737,28 @@
     if (!node) return;
     totalScanned++;
 
+    const regEntry = registerFeedStoryNode(node);
+
     const header = node.comet_sections?.header?.story;
     const content = node.comet_sections?.content?.story;
     const feedback = node.comet_sections?.feedback?.story?.feedback;
+    const attachment = content?.attachments?.[0]?.styles?.attachment || (Array.isArray(node.attachments) ? node.attachments[0] : null);
 
     const sponsoredData = header?.sponsored_data || node.sponsored_data;
-    const isSponsored = Boolean(sponsoredData?.is_sponsored || node.th_dat_spo);
+    const isSponsored = Boolean(
+      sponsoredData?.is_sponsored ||
+      node.th_dat_spo ||
+      node.__streamMeta?.isAdAction ||
+      attachment?.call_to_action ||
+      node.click_tracking_linkshim_cb ||
+      node.whatsapp_ad_context
+    );
     if (!isSponsored) return;
 
     const actor = header?.actors?.[0] || (Array.isArray(node.actors) ? node.actors[0] : {});
-    const pageName = actor.name || 'Unknown Page';
-    const pageUrl = actor.url || null;
+    const pageName = actor.name || regEntry?.pageName || 'Unknown Page';
+    const pageUrl = actor.url || regEntry?.pageUrl || null;
+    const actorId = actor.id || regEntry?.actorId || null;
 
     let isVerified = Boolean(
       actor.is_verified === true ||
@@ -620,7 +766,6 @@
       actor.verification_status === 'VERIFIED'
     );
 
-    const attachment = content?.attachments?.[0]?.styles?.attachment || (Array.isArray(node.attachments) ? node.attachments[0] : null);
     const media = attachment?.media;
     let mediaType = 'PHOTO';
     if (media?.__typename === 'Video' || media?.playable_url || media?.playable_duration_in_ms) {
@@ -643,19 +788,29 @@
     let comments = feedback?.comment_rendering_instance?.comments?.total_count || 0;
     let shares = feedback?.share_count?.count || 0;
 
-    const postId = node.post_id || node.id || (sponsoredData && sponsoredData.ad_id) || `ad_${Date.now()}`;
+    const postId = node.post_id || regEntry?.postId || (sponsoredData && sponsoredData.ad_id) || `ad_${Date.now()}`;
     const contentText = content?.message?.text || node.message?.text || '';
     const headline = attachment?.title_with_entities?.text || '';
     const domain = attachment?.source?.text || '';
+
+    let postUrl = regEntry?.storyUrl || node.permalink_url || null;
+    const validActor = actorId && /^\d{5,}$/.test(String(actorId));
+    const validPost = postId && (/^\d{5,}$/.test(String(postId)) || /^pfbid\w+$/.test(String(postId)));
+    if (!postUrl && validActor && validPost) {
+      postUrl = `https://www.facebook.com/story.php?story_fbid=${postId}&id=${actorId}`;
+    } else if (!postUrl && validPost) {
+      postUrl = `https://www.facebook.com/${postId}`;
+    }
 
     // Lưu GraphQL metadata vào pending queue để DOM engine dùng
     const graphqlData = {
       adId: (sponsoredData && sponsoredData.ad_id) || postId,
       postId,
       nodeId: node.id,
-      actorId: actor.id,
+      actorId,
       pageName,
       pageUrl,
+      postUrl,
       isVerified,
       mediaType,
       videoDuration,
@@ -667,8 +822,10 @@
       domain
     };
 
-    pendingGraphqlAds.set(pageName.toLowerCase(), graphqlData);
+    pendingGraphqlAds.set(cleanName(pageName), graphqlData);
+    if (actorId) pendingGraphqlAds.set(String(actorId), graphqlData);
     if (postId) pendingGraphqlAdsById.set(String(postId), graphqlData);
+    if (node.id) pendingGraphqlAdsById.set(String(node.id), graphqlData);
 
     // Kiểm tra xem thẻ DOM của bài ads này đã render trên màn hình chưa
     const domCard = findDomCardByPageName(pageName);
@@ -687,20 +844,18 @@
     if (domData.buttonText) buttonText = domData.buttonText;
     if (domData.mediaType === 'VIDEO') mediaType = 'VIDEO';
 
-    let postUrl = await resolveFbStoryUrl({
-      nodeId: node.id,
-      actorId: actor.id,
-      postId: node.post_id || node.legacy_fbid
-    });
-
-    if (!postUrl && actor.id && postId) {
-      postUrl = `https://www.facebook.com/story.php?story_fbid=${postId}&id=${actor.id}`;
+    if (!postUrl) {
+      postUrl = extractPostUrlFromDomCard(domCard, {
+        pageId: actorId,
+        pageName,
+        pageUrl: domData.pageUrl || pageUrl
+      });
     }
 
     auditAndFilterAd({
       adId: graphqlData.adId,
       pageName,
-      pageUrl,
+      pageUrl: domData.pageUrl || pageUrl,
       isVerified,
       mediaType,
       videoDuration,
@@ -736,6 +891,21 @@
         const { pageName } = domData;
         if (!pageName || pageName === 'Facebook' || pageName === 'Unknown Page') continue;
 
+        // Trích xuất pageId từ pageUrl hoặc profile.php?id=...
+        let pageId = null;
+        if (domData.pageUrl) {
+          try {
+            const u = new URL(domData.pageUrl, location.href);
+            pageId = u.searchParams.get('id');
+          } catch(e) {}
+        }
+        if (!pageId) {
+          const pl = card.querySelector('a[href*="profile.php?id="]');
+          if (pl) {
+            try { pageId = new URL(pl.href, location.href).searchParams.get('id'); } catch(e) {}
+          }
+        }
+
         // Nếu bài post chưa tải xong vùng tương tác (reaction bar chưa render):
         const hasReactionToolbar = Boolean(
           card.querySelector('div[role="button"][aria-label*="Like" i], div[role="button"][aria-label*="Thích" i], div[role="toolbar"], div[aria-label*="reaction" i], span[role="toolbar"]')
@@ -745,59 +915,40 @@
           continue;
         }
 
-        const isKnownAd = pendingGraphqlAds.has(pageName.toLowerCase());
+        const cName = cleanName(pageName);
+        const graphqlInfo = pendingGraphqlAds.get(cName) || 
+                            (pageId ? pendingGraphqlAds.get(String(pageId)) : null) || 
+                            {};
+        const regInfo = feedPostsRegistry.byPageName.get(cName) || 
+                        (pageId ? feedPostsRegistry.byActorId.get(String(pageId)) : null) || 
+                        {};
+
+        const isKnownAd = Boolean(graphqlInfo.adId);
         const isAdDom = hasSponsored || domData.buttonText || (hasLinkshim && (hasDomainCard || hasCtaText)) || isKnownAd;
         if (!isAdDom) continue;
 
-        const graphqlInfo = pendingGraphqlAds.get(pageName.toLowerCase()) || {};
         const adKey = String(graphqlInfo.adId || `dom_${pageName}_${domData.targetUrl || text.substring(0, 30).replace(/\s+/g, '_')}`);
         if (processedAdKeys.has(adKey)) continue;
 
-        // Tìm candidate post/reel link trong DOM card
-        const links = Array.from(card.querySelectorAll('a')).map(a => a.href);
-        const candidatePostUrl = links.find(h => 
-          /story_fbid=|\/posts\/|\/permalink\.php|\/share\/|\/videos\/|\/reel\/\d|\/watch\/?\?v=|\/photo|fbid=|video\.php/.test(h)
-        );
-
-        // Đọc React Fiber trên card nếu có
-        let fiberNodeId = graphqlInfo.nodeId || null;
-        let fiberActorId = graphqlInfo.actorId || null;
-        let fiberPostId = graphqlInfo.postId || null;
-
-        if (!fiberNodeId) {
-          const key = Object.keys(card).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
-          if (key) {
-            let curr = card[key];
-            let depth = 0;
-            while (curr && depth < 30) {
-              const s = curr.memoizedProps?.story || curr.memoizedProps?.feedUnit?.story;
-              if (s) {
-                fiberNodeId = s.id;
-                fiberActorId = s.actors?.[0]?.id;
-                fiberPostId = s.post_id || s.legacy_fbid;
-                break;
-              }
-              curr = curr.return;
-              depth++;
-            }
-          }
+        // Phân giải link bài post Facebook chuẩn xác
+        let postUrl = graphqlInfo.postUrl || regInfo.storyUrl || regInfo.permalinkUrl || null;
+        if (!postUrl) {
+          postUrl = extractPostUrlFromDomCard(card, {
+            pageId: pageId || graphqlInfo.actorId || regInfo.actorId,
+            pageName,
+            pageUrl: domData.pageUrl || graphqlInfo.pageUrl || regInfo.pageUrl
+          });
         }
 
-        let postUrl = await resolveFbStoryUrl({
-          candidateUrl: candidatePostUrl,
-          nodeId: fiberNodeId,
-          actorId: fiberActorId,
-          postId: fiberPostId
-        });
-
+        // Dự phòng an toàn tuyệt đối: Không bao giờ để postUrl bị null
         if (!postUrl) {
-          postUrl = candidatePostUrl || null;
+          postUrl = domData.pageUrl || graphqlInfo.pageUrl || regInfo.pageUrl || null;
         }
 
         auditAndFilterAd({
           adId: adKey,
           pageName: domData.pageName,
-          pageUrl: domData.pageUrl || graphqlInfo.pageUrl,
+          pageUrl: domData.pageUrl || graphqlInfo.pageUrl || regInfo.pageUrl,
           isVerified: domData.isVerified,
           mediaType: domData.mediaType === 'VIDEO' ? 'VIDEO' : (graphqlInfo.mediaType || domData.mediaType),
           videoDuration: graphqlInfo.videoDuration || null,

@@ -277,8 +277,8 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
 
         <div class="ad-card-actions">
-          ${ad.post.url ? `<a href="${escapeHTML(ad.post.url)}" target="_blank" class="btn-card-action" title="Mở bài post trên Facebook dạng story.php">FB Post</a>` : ''}
-          ${ad.post.url ? `<button class="btn-card-action btn-copy-story-link" data-url="${escapeHTML(ad.post.url)}" title="Copy link bài post chuẩn story.php">Copy Post</button>` : ''}
+          ${(ad.post.url || ad.page.url) ? `<a href="${escapeHTML(ad.post.url || ad.page.url)}" target="_blank" class="btn-card-action" title="Mở bài post trên Facebook dạng story.php">FB Post</a>` : ''}
+          ${(ad.post.url || ad.page.url) ? `<button class="btn-card-action btn-copy-story-link" data-url="${escapeHTML(ad.post.url || ad.page.url)}" title="Copy link bài post chuẩn story.php">Copy Post</button>` : ''}
           <button class="btn-card-action btn-copy-link" data-url="${escapeHTML(ad.cta.targetUrl || ad.post.url || '')}" title="Copy link Webstore ngoài">Store</button>
         </div>
       </div>
@@ -457,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       <div class="log-footer">
         <span>ID: ${escapeHTML(String(log.adId).substring(0, 16))}</span>
-        ${log.postUrl ? `<a href="${escapeHTML(log.postUrl)}" target="_blank" style="color:#38bdf8; text-decoration:none; margin: 0 8px; font-weight:500;">[🔗 FB Story Post]</a>` : ''}
+        ${log.postUrl ? `<a href="${escapeHTML(log.postUrl)}" target="_blank" style="color:#38bdf8; text-decoration:none; margin: 0 8px; font-weight:500;">[🔗 FB Story Post]</a>` : (log.pageUrl ? `<a href="${escapeHTML(log.pageUrl)}" target="_blank" style="color:#38bdf8; text-decoration:none; margin: 0 8px; font-weight:500;">[🔗 FB Fanpage]</a>` : '')}
         <span>${log.timestamp || ''}</span>
       </div>
     `;
