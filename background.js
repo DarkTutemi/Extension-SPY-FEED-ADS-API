@@ -392,29 +392,152 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 return null;
               }
 
-              // 4. Cơ chế tìm và thả Reaction Like / Love thực chiến trên DOM
+              // 4. Cơ chế kép: Bắn trực tiếp CometUFIFeedbackReactMutation qua GraphQL + Đồng bộ click DOM
               let reactionAttempt = 0;
               let reactionDropped = false;
+
+              // A. Gửi GraphQL Mutation trực tiếp lên backend Facebook (Chắc chắn 100% ăn reaction)
+              const reactionMap = {
+                LIKE: '1635855486666999',
+                LOVE: '1678524932434102',
+                CARE: '613557422527858',
+                HAHA: '115940658764963',
+                WOW: '478547315650144',
+                SAD: '908563459236466',
+                ANGRY: '444813342392137'
+              };
+              const targetReactionId = reactionMap[rType] || reactionMap.LIKE;
+
+              async function executeGraphQLReaction() {
+                try {
+                  const scripts = Array.from(document.querySelectorAll('script'));
+                  let dtsg = window.DTSGInitialData?.token;
+                  if (!dtsg) {
+                    for (const s of scripts) {
+                      const t = s.textContent || '';
+                      const m = t.match(/"DTSGInitialData"[^}]*"token":"([^"]+)"/);
+                      if (m) { dtsg = m[1]; break; }
+                    }
+                  }
+                  if (!dtsg) {
+                    for (const s of scripts) {
+                      const t = s.textContent || '';
+                      const m = t.match(/"token":"(NA[^"]+)"/);
+                      if (m) { dtsg = m[1]; break; }
+                    }
+                  }
+                  if (!dtsg) {
+                    const m = document.body.innerHTML.match(/name="fb_dtsg"\s+value="([^"]+)"/);
+                    if (m) dtsg = m[1];
+                  }
+
+                  let lsd = null;
+                  for (const s of scripts) {
+                    const t = s.textContent || '';
+                    const m = t.match(/"LSD"[^}]*"token":"([^"]+)"/);
+                    if (m) { lsd = m[1]; break; }
+                  }
+
+                  const user = (document.cookie.match(/c_user=(\d+)/) || [])[1];
+
+                  let feedbackId = null;
+                  for (const s of scripts) {
+                    const t = s.textContent || '';
+                    const m = t.match(/"subscription_target_id"\s*:\s*"(\d+)"/);
+                    if (m) { feedbackId = btoa('feedback:' + m[1]); break; }
+                  }
+                  if (!feedbackId) {
+                    for (const s of scripts) {
+                      const t = s.textContent || '';
+                      const matches = t.matchAll(/"(ZmVlZGJhY2s[A-Za-z0-9+/=]+)"/g);
+                      for (const m of matches) {
+                        try {
+                          const dec = atob(m[1]);
+                          if (dec.startsWith('feedback:') && !dec.includes('_')) {
+                            feedbackId = m[1];
+                            break;
+                          }
+                        } catch(e) {}
+                      }
+                      if (feedbackId) break;
+                    }
+                  }
+                  if (!feedbackId && pId) {
+                    feedbackId = btoa('feedback:' + String(pId).replace(/[^\d]/g, ''));
+                  }
+
+                  if (!dtsg || !user || !feedbackId) {
+                    console.warn('[Warmup GraphQL] Thiếu token dtsg/user/feedbackId:', { hasDtsg: !!dtsg, hasUser: !!user, feedbackId });
+                    return false;
+                  }
+
+                  const variables = JSON.stringify({
+                    input: {
+                      attribution_id_v2: "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start," + Date.now() + ",432281,,,",
+                      feedback_id: feedbackId,
+                      feedback_reaction_id: targetReactionId,
+                      feedback_source: "OBJECT",
+                      is_tracking_encrypted: true,
+                      tracking: [],
+                      session_id: "c81d7683-93ac-404a-9a23-ce11dcb25b4c",
+                      actor_id: user,
+                      client_mutation_id: "1"
+                    },
+                    scale: 1,
+                    canUseNicknameOnComet: false,
+                    useDefaultActor: false,
+                    __relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider: false
+                  });
+
+                  const body = new URLSearchParams({
+                    av: user,
+                    __user: user,
+                    __a: '1',
+                    fb_dtsg: dtsg,
+                    jazoest: '25585',
+                    lsd: lsd || '',
+                    fb_api_caller_class: 'RelayModern',
+                    fb_api_req_friendly_name: 'CometUFIFeedbackReactMutation',
+                    doc_id: '27646120298312844',
+                    variables: variables
+                  });
+
+                  const res = await fetch('https://www.facebook.com/api/graphql/', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/x-www-form-urlencoded',
+                      'X-FB-Friendly-Name': 'CometUFIFeedbackReactMutation'
+                    },
+                    body: body.toString()
+                  });
+
+                  const json = await res.json();
+                  if (json?.data?.feedback_react) {
+                    console.log(`[Warmup GraphQL] ✓ Đã gửi thành công CometUFIFeedbackReactMutation (${rType}):`, json.data.feedback_react.feedback?.viewer_feedback_reaction_info);
+                    reactionDropped = true;
+                    const hud = document.getElementById('warmupHudText');
+                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
+                    return true;
+                  }
+                } catch (err) {
+                  console.warn('[Warmup GraphQL] Lỗi gửi mutation:', err);
+                }
+                return false;
+              }
+
+              // Khởi chạy mutation ngay lập tức
+              executeGraphQLReaction();
+
+              // B. Quét tìm nút trên DOM và click để đồng bộ giao diện người dùng
               const pollReaction = setInterval(() => {
                 reactionAttempt++;
                 const postBtn = findTargetReactionButton(targetAuthor);
 
                 if (postBtn) {
-                  clearInterval(pollReaction);
                   postBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  const aria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
-                  const isAlreadyLiked = aria.includes('remove') || aria.includes('gỡ');
-
-                  if (isAlreadyLiked) {
-                    reactionDropped = true;
-                    console.log('[Warmup DOM] Bài viết đã ở trạng thái liked sẵn.');
-                    const hud = document.getElementById('warmupHudText');
-                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Bài viết đã ở trạng thái Thích sẵn! Đang xem video...</span>`;
-                    return;
-                  }
 
                   if (rType === 'LOVE') {
-                    // Hover để mở reaction dock
+                    // Hover mở dock reaction để bấm Love
                     const rect = postBtn.getBoundingClientRect();
                     const x = rect.left + rect.width / 2;
                     const y = rect.top + rect.height / 2;
@@ -428,58 +551,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       if (loveBtn) {
                         loveBtn.click();
                         console.log('[Warmup DOM] Đã click nút LOVE!');
+                        reactionDropped = true;
+                        clearInterval(pollReaction);
                       } else {
                         postBtn.click();
-                        console.log('[Warmup DOM] Fallback click nút LIKE!');
-                      }
-
-                      // Kiểm tra lại sau 500ms
-                      setTimeout(() => {
-                        const checkAria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
-                        if (checkAria.includes('remove') || checkAria.includes('gỡ')) {
-                          reactionDropped = true;
-                        } else {
-                          postBtn.click(); // Retry
-                          reactionDropped = true;
-                        }
-                        const hud = document.getElementById('warmupHudText');
-                        if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
-                      }, 500);
-                    }, 500);
-                  } else {
-                    // LIKE: click trực tiếp
-                    postBtn.click();
-                    console.log('[Warmup DOM] Đã click nút LIKE!');
-
-                    // Kiểm tra và retry nếu cần
-                    setTimeout(() => {
-                      const checkAria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
-                      if (checkAria.includes('remove') || checkAria.includes('gỡ')) {
+                        console.log('[Warmup DOM] Click nút LIKE/Reaction trên bài!');
                         reactionDropped = true;
-                      } else {
-                        // Retry với sequence PointerEvent chuẩn
-                        const rect = postBtn.getBoundingClientRect();
-                        const x = rect.left + rect.width / 2;
-                        const y = rect.top + rect.height / 2;
-                        const evOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
-                        postBtn.dispatchEvent(new PointerEvent('pointerdown', evOpts));
-                        postBtn.dispatchEvent(new MouseEvent('mousedown', evOpts));
-                        postBtn.dispatchEvent(new PointerEvent('pointerup', evOpts));
-                        postBtn.dispatchEvent(new MouseEvent('mouseup', evOpts));
-                        postBtn.click();
-                        reactionDropped = true;
-                        console.log('[Warmup DOM] Đã retry click nút LIKE bằng PointerEvent sequence.');
+                        clearInterval(pollReaction);
                       }
                       const hud = document.getElementById('warmupHudText');
                       if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
                     }, 500);
+                  } else {
+                    // LIKE: click trực tiếp nút
+                    postBtn.click();
+                    console.log('[Warmup DOM] Đã click nút LIKE!');
+                    reactionDropped = true;
+                    clearInterval(pollReaction);
+                    const hud = document.getElementById('warmupHudText');
+                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
                   }
                 }
 
                 if (reactionAttempt >= 25) {
                   clearInterval(pollReaction);
                   if (!reactionDropped) {
-                    console.warn(`[Warmup DOM] Không tìm thấy nút Like sau 25 lần thử cho fanpage "${targetAuthor}".`);
+                    console.warn(`[Warmup DOM] Hết thời gian chờ nút cho fanpage "${targetAuthor}". Trạng thái GraphQL: ${reactionDropped}`);
                   }
                 }
               }, 600);

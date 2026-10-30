@@ -186,11 +186,13 @@
       if (!dtsg || !userId || !postId) return;
 
       const reactionMap = {
-        LIKE: '115940658764963',
-        LOVE: '1624301844510860',
-        CARE: '413009949646487',
-        HAHA: '1198424286884029',
-        WOW: '1198424286884030'
+        LIKE: '1635855486666999',
+        LOVE: '1678524932434102',
+        CARE: '613557422527858',
+        HAHA: '115940658764963',
+        WOW: '478547315650144',
+        SAD: '908563459236466',
+        ANGRY: '444813342392137'
       };
 
       const reactionId = reactionMap[reactionType] || reactionMap.LIKE;
