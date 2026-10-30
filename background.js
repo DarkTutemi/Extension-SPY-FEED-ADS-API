@@ -256,14 +256,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt: Thả LIKE/LOVE random & xem 15s) ──
     case 'RUN_WARMUP_FLOW': {
-      const { postUrl, postId } = payload;
+      const { postUrl, postId, pageName, watchSeconds } = payload;
       scannerState.totalWarmupRuns++;
       scannerState.consecutiveUnmatchedCount = 0;
 
       // Random chọn 1 trong 2 loại Reaction: LIKE hoặc LOVE
       const reactionType = Math.random() < 0.5 ? 'LIKE' : 'LOVE';
       const reactionLabel = reactionType === 'LOVE' ? 'Yêu thích (❤️ Love)' : 'Thích (👍 Like)';
-      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}) trên bài:`, postUrl);
+      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}, Fanpage: "${pageName}") trên bài:`, postUrl);
 
       // Đánh dấu isWarmup = true trong adLogsList nếu tìm thấy log
       const targetLog = adLogsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
@@ -287,13 +287,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       // 1. Mở tab bài viết trực tiếp lên phía trước (active: true) để paneer nhìn thấy
       chrome.tabs.create({ url: postUrl, active: true }, (warmupTab) => {
         if (!warmupTab?.id) return;
-        const watchDuration = (scannerState.settings.warmupWatchSeconds || 15);
+        const watchDuration = (watchSeconds || scannerState.settings.warmupWatchSeconds || 15);
 
         // Bơm script trực tiếp vào tab Warmup: hiển thị HUD, phát video, tìm và thả Like/Love trực tiếp
         setTimeout(() => {
           chrome.scripting.executeScript({
             target: { tabId: warmupTab.id },
-            func: (pId, rType, rLabel, seconds) => {
+            func: (pId, rType, rLabel, seconds, targetAuthor) => {
               // 1. Tạo Banner HUD đếm ngược nổi trên đỉnh trang
               const banner = document.createElement('div');
               banner.id = 'fb-hunter-warmup-hud';
@@ -328,72 +328,163 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               const playOverlay = document.querySelector('[role="article"] div[aria-label*="Play" i], [role="article"] div[aria-label*="Phát" i], [role="dialog"] div[aria-label*="Play" i], [role="dialog"] div[aria-label*="Phát" i]');
               if (playOverlay) playOverlay.click();
 
-              // 3. Cơ chế tìm và thả Reaction Like / Love thực chiến trên DOM
+              // 3. Hàm tìm kiếm chính xác nút Reaction của bài viết (Loại trừ bài ngầm và comment)
+              function findTargetReactionButton(authorName) {
+                const normAuthor = (authorName || '').trim().toLowerCase();
+                const dialog = document.querySelector('[role="dialog"]');
+                const vid = document.querySelector('video');
+                const videoScope = vid ? (vid.closest('[role="dialog"]') || vid.closest('[role="article"]') || vid.closest('[data-pagelet]') || vid.parentElement?.parentElement?.parentElement) : null;
+
+                // NGUYÊN TẮC: Nếu có dialog modal (story.php / permalink), CHỈ tìm bên trong dialog để KHÔNG click nhầm feed ngầm!
+                const scopes = dialog ? [dialog] : [videoScope, document.querySelector('[role="article"]'), document.querySelector('[role="main"]'), document.body].filter(Boolean);
+
+                for (const scope of scopes) {
+                  const btns = Array.from(scope.querySelectorAll('div[role="button"]'));
+                  const nonCommentBtns = btns.filter(b => {
+                    if (b.closest('ul') || b.closest('[aria-label*="Comment" i]') || b.closest('[aria-label*="bình luận" i]')) return false;
+                    const r = b.getBoundingClientRect();
+                    return (r.width >= 24 && r.height >= 18);
+                  });
+
+                  // Ưu tiên 1: Tìm theo tên tác giả (Fanpage) chính xác 100%
+                  if (normAuthor) {
+                    const authorBtn = nonCommentBtns.find(b => {
+                      const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                      let hasAuthor = a.includes(normAuthor);
+                      if (!hasAuthor) {
+                        const words = normAuthor.split(/\s+/).filter(w => w.length >= 2);
+                        if (words.length >= 2 && a.includes(words[0]) && a.includes(words[1])) {
+                          hasAuthor = true;
+                        } else if (words.length === 1 && a.includes(words[0])) {
+                          hasAuthor = true;
+                        }
+                      }
+                      const isReaction = a.includes('like') || a.includes('thích') || a.includes('react') ||
+                                         a.includes('remove') || a.includes('gỡ') || a.includes('bày tỏ cảm xúc') ||
+                                         a.includes('yêu thích') || a.includes('love') || a.includes('haha') ||
+                                         a.includes('care') || a.includes('wow') || a.includes('sad') || a.includes('angry');
+                      const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
+                      const notChangeReaction = !a.includes('change') && !a.includes('thay đổi');
+                      const notPeopleCount = !a.includes('people') && !a.includes('người');
+                      return hasAuthor && isReaction && not3Dots && notChangeReaction && notPeopleCount;
+                    });
+                    if (authorBtn) return authorBtn;
+                  }
+
+                  // Ưu tiên 2: Tìm nút Like/Reaction bài viết bên trong scope (dialog hoặc container chứa video)
+                  const postBtn = nonCommentBtns.find(b => {
+                    const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                    const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
+                    const notChangeReaction = !a.includes('change') && !a.includes('thay đổi');
+                    const notPeopleCount = !a.includes('people') && !a.includes('người');
+                    if (!not3Dots || !notChangeReaction || !notPeopleCount) return false;
+
+                    const isLike = a === 'like' || a === 'thích' ||
+                                   a.startsWith('react with like') || a.startsWith('remove like') ||
+                                   a.startsWith('react to') || a.startsWith('react with') ||
+                                   a.startsWith('remove ') || a.startsWith('gỡ ') ||
+                                   a.startsWith('thích bài viết') ||
+                                   a.startsWith('bày tỏ cảm xúc') || a === 'react';
+                    return isLike;
+                  });
+                  if (postBtn) return postBtn;
+                }
+                return null;
+              }
+
+              // 4. Cơ chế tìm và thả Reaction Like / Love thực chiến trên DOM
               let reactionAttempt = 0;
               let reactionDropped = false;
               const pollReaction = setInterval(() => {
                 reactionAttempt++;
-                const containers = [
-                  document.querySelector('[role="dialog"]'),
-                  document.querySelector('[role="article"]'),
-                  document.querySelector('[role="main"]'),
-                  document.body
-                ].filter(Boolean);
+                const postBtn = findTargetReactionButton(targetAuthor);
 
-                for (const c of containers) {
-                  const btns = Array.from(c.querySelectorAll('div[role="button"]'));
-                  const postBtn = btns.find(b => {
-                    const r = b.getBoundingClientRect();
-                    const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-                    const isLikeAria = (a === 'like' || a === 'thích' || a === 'remove like' || a === 'gỡ thích' || a === 'bày tỏ cảm xúc thích' || a === 'react with like');
-                    return isLikeAria && r.width >= 40 && r.height >= 24;
-                  }) || btns.find(b => {
-                    const r = b.getBoundingClientRect();
-                    const a = (b.getAttribute('aria-label') || '').trim().toLowerCase();
-                    const isAction = (a.includes('like') || a.includes('thích')) && !a.includes('people') && !a.includes('người');
-                    const notComment = !b.closest('[role="article"] [role="article"]');
-                    return isAction && r.width >= 36 && r.height >= 22 && notComment;
-                  });
+                if (postBtn) {
+                  clearInterval(pollReaction);
+                  postBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  const aria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
+                  const isAlreadyLiked = aria.includes('remove') || aria.includes('gỡ');
 
-                  if (postBtn) {
-                    clearInterval(pollReaction);
+                  if (isAlreadyLiked) {
                     reactionDropped = true;
-                    postBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    const aria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
-                    const isAlreadyLiked = aria.includes('remove') || aria.includes('gỡ');
-
-                    if (rType === 'LOVE') {
-                      postBtn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-                      postBtn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-                      postBtn.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
-                      setTimeout(() => {
-                        const loveBtn = document.querySelector('div[aria-label="Love"], div[aria-label="Yêu thích"]');
-                        if (loveBtn) {
-                          loveBtn.click();
-                          console.log('[Warmup DOM] Đã click nút LOVE!');
-                        } else if (!isAlreadyLiked) {
-                          postBtn.click();
-                          console.log('[Warmup DOM] Fallback click nút LIKE!');
-                        }
-                      }, 500);
-                    } else {
-                      if (!isAlreadyLiked) {
-                        postBtn.click();
-                        console.log('[Warmup DOM] Đã click nút LIKE!');
-                      } else {
-                        console.log('[Warmup DOM] Nút LIKE đã ở trạng thái liked sẵn.');
-                      }
-                    }
-
+                    console.log('[Warmup DOM] Bài viết đã ở trạng thái liked sẵn.');
                     const hud = document.getElementById('warmupHudText');
-                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
-                    break;
+                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Bài viết đã ở trạng thái Thích sẵn! Đang xem video...</span>`;
+                    return;
+                  }
+
+                  if (rType === 'LOVE') {
+                    // Hover để mở reaction dock
+                    const rect = postBtn.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+                    const evOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+                    postBtn.dispatchEvent(new PointerEvent('pointerover', evOpts));
+                    postBtn.dispatchEvent(new MouseEvent('mouseover', evOpts));
+                    postBtn.dispatchEvent(new MouseEvent('mouseenter', evOpts));
+
+                    setTimeout(() => {
+                      const loveBtn = document.querySelector('div[aria-label="Love"], div[aria-label="Yêu thích"]');
+                      if (loveBtn) {
+                        loveBtn.click();
+                        console.log('[Warmup DOM] Đã click nút LOVE!');
+                      } else {
+                        postBtn.click();
+                        console.log('[Warmup DOM] Fallback click nút LIKE!');
+                      }
+
+                      // Kiểm tra lại sau 500ms
+                      setTimeout(() => {
+                        const checkAria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
+                        if (checkAria.includes('remove') || checkAria.includes('gỡ')) {
+                          reactionDropped = true;
+                        } else {
+                          postBtn.click(); // Retry
+                          reactionDropped = true;
+                        }
+                        const hud = document.getElementById('warmupHudText');
+                        if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
+                      }, 500);
+                    }, 500);
+                  } else {
+                    // LIKE: click trực tiếp
+                    postBtn.click();
+                    console.log('[Warmup DOM] Đã click nút LIKE!');
+
+                    // Kiểm tra và retry nếu cần
+                    setTimeout(() => {
+                      const checkAria = (postBtn.getAttribute('aria-label') || '').toLowerCase();
+                      if (checkAria.includes('remove') || checkAria.includes('gỡ')) {
+                        reactionDropped = true;
+                      } else {
+                        // Retry với sequence PointerEvent chuẩn
+                        const rect = postBtn.getBoundingClientRect();
+                        const x = rect.left + rect.width / 2;
+                        const y = rect.top + rect.height / 2;
+                        const evOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+                        postBtn.dispatchEvent(new PointerEvent('pointerdown', evOpts));
+                        postBtn.dispatchEvent(new MouseEvent('mousedown', evOpts));
+                        postBtn.dispatchEvent(new PointerEvent('pointerup', evOpts));
+                        postBtn.dispatchEvent(new MouseEvent('mouseup', evOpts));
+                        postBtn.click();
+                        reactionDropped = true;
+                        console.log('[Warmup DOM] Đã retry click nút LIKE bằng PointerEvent sequence.');
+                      }
+                      const hud = document.getElementById('warmupHudText');
+                      if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
+                    }, 500);
                   }
                 }
-                if (reactionAttempt >= 15) clearInterval(pollReaction);
-              }, 800);
 
-              // 4. Đếm ngược từng giây trên HUD
+                if (reactionAttempt >= 25) {
+                  clearInterval(pollReaction);
+                  if (!reactionDropped) {
+                    console.warn(`[Warmup DOM] Không tìm thấy nút Like sau 25 lần thử cho fanpage "${targetAuthor}".`);
+                  }
+                }
+              }, 600);
+
+              // 5. Đếm ngược từng giây trên HUD
               let remain = seconds;
               const timer = setInterval(() => {
                 remain--;
@@ -410,11 +501,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
               }, 1000);
             },
-            args: [postId || '', reactionType, reactionLabel, watchDuration]
+            args: [postId || '', reactionType, reactionLabel, watchDuration, pageName || '']
           }).catch((err) => {
             console.warn('[Warmup] Lỗi inject script:', err.message);
           });
-        }, 1500);
+        }, 1200);
 
         // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra
         setTimeout(() => {
@@ -423,7 +514,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             action: 'ON_WARMUP_COMPLETED',
             payload: { postId, postUrl, reactionType, totalWarmupRuns: scannerState.totalWarmupRuns }
           }).catch(() => {});
-        }, 1500 + (watchDuration * 1000));
+        }, 1200 + (watchDuration * 1000));
       });
       break;
     }
