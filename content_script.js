@@ -148,6 +148,14 @@
   // 3. Logic Đánh Giá Bộ Lọc 5 Tiêu Chí & Sinh Log
   function auditAndFilterAd({ adId, pageName, pageUrl, isVerified, mediaType, videoDuration, videoStreamUrl, likes, comments, shares, buttonText, targetUrl, contentText, headline, domain, postUrl }) {
     if (!adId || processedAdKeys.has(String(adId))) return null;
+
+    // Kiểm tra an toàn kép: Tuyệt đối không cho bài viết Hữu cơ (Organic Post / Paid Partnership) lọt vào bộ đếm Ads và Warmup
+    const hasPaidPartnership = /paid\s+partnership|hợp\s+tác\s+trả\s+phí/i.test(contentText || '') || /paid\s+partnership|hợp\s+tác\s+trả\s+phí/i.test(headline || '');
+    if (hasPaidPartnership && !buttonText && !targetUrl) {
+      console.warn(`[ContentScript] Loại trừ bài Creator Paid partnership hữu cơ không phải Ads: "${pageName}"`);
+      return null;
+    }
+
     processedAdKeys.add(String(adId));
 
     totalAdsFound++;
@@ -746,6 +754,42 @@
     });
   }
 
+  // 3d. Nhận diện bài viết Hữu Cơ (Organic Post): Bạn bè, Nhóm, Cá nhân, hoặc Creator Paid Partnership
+  // Nguyên tắc: Bài Ads THẬT sự của Facebook KHÔNG BAO GIỜ có ngày giờ đăng tự nhiên hoặc icon quyền riêng tư (Public/Friends)
+  function isOrganicPostDom(card) {
+    if (!card) return false;
+    const text = card.innerText || '';
+
+    // 1. Nếu có nhãn "Paid partnership" hoặc "Hợp tác trả phí" mà KHÔNG CÓ chữ "Sponsored" / "Được tài trợ"
+    const hasPaidPartnership = /paid\s+partnership|hợp\s+tác\s+trả\s+phí/i.test(text);
+    const hasSponsoredWord = /\b(sponsored|được\s+tài\s+trợ)\b/i.test(text);
+    if (hasPaidPartnership && !hasSponsoredWord) {
+      return true; // Đây là bài Branded Content hữu cơ của Creator/KOL, không phải Facebook Ads trả tiền
+    }
+
+    // 2. Kiểm tra Icon quyền riêng tư (Privacy Scope Icon) - Chỉ có trên bài Organic, Ads không bao giờ có
+    const hasPrivacyScope = Boolean(
+      card.querySelector('svg[aria-label*="Public" i], svg[aria-label*="Công khai" i], svg[aria-label*="Friends" i], svg[aria-label*="Bạn bè" i], svg[aria-label*="Custom" i], svg[aria-label*="Tùy chỉnh" i]') ||
+      card.querySelector('span[aria-label*="Shared with Public" i], span[aria-label*="Chia sẻ với Công khai" i], span[aria-label*="Shared with Friends" i], span[aria-label*="Chia sẻ với bạn bè" i]')
+    );
+    if (hasPrivacyScope && !hasSponsoredWord) {
+      return true; // Có biểu tượng quả địa cầu hoặc bạn bè -> Bài Organic 100%
+    }
+
+    // 3. Kiểm tra ngày giờ đăng tự nhiên (Organic Post Timestamp):
+    // Facebook Ads KHÔNG BAO GIỜ hiển thị ngày giờ đăng (như October 22, 2 hrs, 1 d, Hôm qua...)
+    // Dòng thời gian đó của bài Ads bị thay thế 100% bằng chữ "Sponsored" / "Được tài trợ"
+    const headerEl = card.querySelector('h2, h3, h4')?.parentElement;
+    const headerText = headerEl ? (headerEl.innerText || '') : text.substring(0, 300);
+    const organicDatePattern = /\b(?:\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December|Tháng\s+\d{1,2})|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\b|\d+\s*(?:hrs?|mins?|days?|wks?|thg|giờ|phút|ngày|tuần)\b|yesterday|hôm\s+qua|vừa\s+xong|just\s+now)/i;
+
+    if (organicDatePattern.test(headerText) && !hasSponsoredWord) {
+      return true;
+    }
+
+    return false;
+  }
+
   // 4. Engine A: Đánh giá GraphQL Story Node
   async function evaluateGraphqlStory(node) {
     if (!node) return;
@@ -767,14 +811,29 @@
     const feedback = node.comet_sections?.feedback?.story?.feedback;
     const attachment = content?.attachments?.[0]?.styles?.attachment || (Array.isArray(node.attachments) ? node.attachments[0] : null);
 
-    // TIÊU CHUẨN XÁC ĐỊNH BÀI ADS TRONG GRAPHQL:
-    // Phải có sponsored_data thật của Facebook hoặc cờ th_dat_spo / sposnsor_new_distac_action
+    // LOẠI TRỪ 100%: Bài viết Hữu Cơ (Organic Post) có quyền riêng tư (Public/Friends)
+    // Quảng cáo Facebook Ads KHÔNG BAO GIỜ có privacy_scope
+    if (header?.privacy_scope || node.privacy_scope) return;
+
+    // LOẠI TRỪ 100%: Bài Creator Paid Partnership tự nhiên (Không chạy Ads trả tiền)
+    const hasBrandedContent = Boolean(
+      header?.has_branded_content ||
+      node.has_branded_content ||
+      header?.branded_content_sponsor_page ||
+      node.branded_content_sponsor_page
+    );
     const sponsoredData = header?.sponsored_data || node.sponsored_data;
+    const hasRealAdId = Boolean(sponsoredData?.ad_id && /^\d{6,}$/.test(String(sponsoredData.ad_id)));
+
+    if (hasBrandedContent && !hasRealAdId) {
+      return; // Bài Paid Partnership của Creator, không phải Ads chạy trả tiền
+    }
+
+    // TIÊU CHUẨN XÁC ĐỊNH BÀI ADS TRONG GRAPHQL:
+    // Phải có sponsored_data thật của Facebook với is_sponsored === true hoặc ad_id thật
     const isSponsored = Boolean(
-      sponsoredData?.is_sponsored === true ||
-      (sponsoredData && sponsoredData.ad_id) ||
-      node.th_dat_spo ||
-      node.__streamMeta?.isAdAction
+      (sponsoredData?.is_sponsored === true && (hasRealAdId || sponsoredData.client_token)) ||
+      hasRealAdId
     );
     if (!isSponsored) return;
 
@@ -906,11 +965,20 @@
         // LOẠI TRỪ 100%: Bài viết trong Group (Nhóm)
         if (card.querySelector('a[href*="/groups/"]')) continue;
 
+        // LOẠI TRỪ 100%: Bài viết Hữu Cơ (Organic Post), Bạn bè, Cá nhân, hoặc Creator Paid Partnership
+        if (isOrganicPostDom(card)) continue;
+
         const text = card.innerText || '';
         const hasLinkshim = Boolean(card.querySelector('a[href*="l.facebook.com/l.php"], a[href*="fbclid="], a[target="_blank"]:not([href*="facebook.com"])'));
         const hasCtaText = /shop\s*now|order\s*now|learn\s*more|sign\s*up|get\s*offer|buy\s*now|claim\s*offer|install\s*now|mua\s*ngay|đặt\s*ngay/i.test(text);
         const hasDomainCard = /[a-zA-Z0-9-]+\.(?:com|co|store|shop|io|net|org)\b/i.test(text);
-        const hasSponsored = text.includes('Sponsored') || text.includes('Được tài trợ') || text.includes('Ad ·') || text.includes('Ad\n') || Boolean(card.querySelector('svg[aria-label*="Sponsored" i], svg[aria-label*="Được tài trợ" i], a[href*="/ads/about/"], a[href*="/ad_preferences/"]'));
+
+        // CHỈ CHẤP NHẬN BÀI ADS THẬT:
+        // Phải có chữ "Sponsored" hoặc "Được tài trợ" (TUYỆT ĐỐI KHÔNG dùng "Ad\n" hay "#ad" vì sẽ bị dính hashtag)
+        const hasSponsored = Boolean(
+          /\b(sponsored|được\s+tài\s+trợ)\b/i.test(text) ||
+          card.querySelector('svg[aria-label="Sponsored" i], svg[aria-label="Được tài trợ" i], a[href*="/ad_preferences/"]')
+        );
 
         // Trích xuất dữ liệu DOM
         const domData = extractDataFromDomCard(card);
@@ -955,9 +1023,9 @@
         const isKnownAd = Boolean(graphqlInfo.adId);
         // TIÊU CHUẨN XÁC ĐỊNH ADS NGHIÊM NGẶT:
         // 1. Được xác nhận là Ad từ GraphQL (sponsored_data)
-        // 2. Hoặc DOM có nhãn Sponsored / Được tài trợ
-        // 3. Hoặc có link out linkshim kèm CTA button mua hàng / domain card
-        const isAdDom = isKnownAd || hasSponsored || (hasLinkshim && (hasDomainCard || hasCtaText) && domData.buttonText);
+        // 2. Hoặc DOM có nhãn Sponsored / Được tài trợ VÀ KHÔNG PHẢI bài viết hữu cơ
+        // 3. Hoặc có link out linkshim kèm CTA button mua hàng VÀ KHÔNG PHẢI bài viết hữu cơ
+        const isAdDom = (isKnownAd || hasSponsored || (hasLinkshim && (hasDomainCard || hasCtaText) && domData.buttonText)) && !isOrganicPostDom(card);
         if (!isAdDom) continue;
 
         const adKey = String(graphqlInfo.adId || `dom_${pageName}_${domData.targetUrl || text.substring(0, 30).replace(/\s+/g, '_')}`);
