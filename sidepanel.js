@@ -359,7 +359,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const badgeRejected = document.getElementById('pillBadgeRejected');
     if (badgeRejected) badgeRejected.textContent = countRejected;
     const badgeWarmup = document.getElementById('pillBadgeWarmup');
-    if (badgeWarmup) badgeWarmup.textContent = countWarmup;
+    if (badgeWarmup) {
+      chrome.storage.local.get(['consecutiveUnmatchedVideoCount', 'scannerSettings'], res => {
+        const current = res?.consecutiveUnmatchedVideoCount || 0;
+        const threshold = res?.scannerSettings?.warmupThreshold || 10;
+        badgeWarmup.textContent = countWarmup > 0 ? `${countWarmup} (${current}/${threshold})` : (current > 0 ? `${current}/${threshold}` : '0');
+        badgeWarmup.title = `Đã warmup: ${countWarmup} bài | Tiến độ hiện tại: ${current}/${threshold} bài video ads không tích xanh trượt`;
+      });
+    }
   }
 
   // ── TAB 2: Render Nhật Ký Quét & Audit Log Chi Tiết ────────────────
@@ -969,6 +976,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (target) {
         target.isWarmup = true;
         renderLogsList();
+      }
+    } else if (message.action === 'ON_WARMUP_PROGRESS') {
+      const { current, threshold } = message.payload || {};
+      const badgeWarmup = document.getElementById('pillBadgeWarmup');
+      if (badgeWarmup) {
+        const countWarmup = logsList.filter(l => l.isWarmup === true).length;
+        badgeWarmup.textContent = countWarmup > 0 ? `${countWarmup} (${current}/${threshold})` : (current > 0 ? `${current}/${threshold}` : '0');
+        badgeWarmup.title = `Đã warmup: ${countWarmup} bài | Tiến độ hiện tại: ${current}/${threshold} bài video ads không tích xanh trượt`;
       }
     } else if (message.action === 'ON_STORE_STEP_UPDATE') {
       const { step, totalSteps, name, detail } = message.payload || {};

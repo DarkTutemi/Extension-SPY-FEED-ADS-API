@@ -36,6 +36,13 @@
   };
 
   let consecutiveUnmatchedVideoCount = 0;
+  chrome.storage.local.get(['consecutiveUnmatchedVideoCount'], (res) => {
+    if (typeof res?.consecutiveUnmatchedVideoCount === 'number') {
+      consecutiveUnmatchedVideoCount = res.consecutiveUnmatchedVideoCount;
+      console.log('[Warmup Tracker] Khôi phục bộ đếm từ storage:', consecutiveUnmatchedVideoCount);
+    }
+  });
+
   let totalScanned = 0;
   let totalAdsFound = 0;
   let totalMatchedAds = 0;
@@ -239,14 +246,24 @@
           console.log(`[Warmup Tracker] Bỏ qua Fanpage có tích xanh ("${pageName}"). Giữ nguyên bộ đếm: ${consecutiveUnmatchedVideoCount}/${threshold}`);
         } else {
           // Chỉ đếm những bài Video Ads thực sự của Fanpage CHƯA có tích xanh
-          consecutiveUnmatchedVideoCount++;
-          console.log(`[Warmup Tracker] Video Ads không tích xanh trượt tiêu chí: ${consecutiveUnmatchedVideoCount} (Ngưỡng: sau ${threshold} bài trượt -> Tương tác bài thứ ${threshold + 1}) | Fanpage: "${pageName}"`);
-
-          // ĐÚNG BÀI THỨ 11 (sau 10 bài video ads không tích xanh trượt): Kích hoạt chu kỳ Warmup
-          if (settings.warmupEnabled !== false && consecutiveUnmatchedVideoCount > threshold) {
+          if (consecutiveUnmatchedVideoCount < threshold) {
+            consecutiveUnmatchedVideoCount++;
+            console.log(`[Warmup Tracker] Video Ads không tích xanh trượt tiêu chí: ${consecutiveUnmatchedVideoCount}/${threshold} | Fanpage: "${pageName}"`);
+            chrome.storage.local.set({ consecutiveUnmatchedVideoCount });
+            chrome.runtime.sendMessage({
+              action: 'ON_WARMUP_PROGRESS',
+              payload: { current: consecutiveUnmatchedVideoCount, threshold }
+            }).catch(() => {});
+          } else {
+            // ĐÃ CÓ ĐỦ 10 BÀI TRƯỢT TRƯỚC ĐÓ -> ĐÂY CHÍNH LÀ BÀI THỨ 11!
             isWarmup = true;
-            console.log(`[Warmup Tracker] 🔥 ĐÃ TÍCH LŨY ĐỦ ${threshold} BÀI TRƯỢT LIÊN TIẾP! Kích hoạt Warmup Cycle trên bài thứ ${consecutiveUnmatchedVideoCount} (Fanpage: "${pageName}")...`);
+            console.log(`[Warmup Tracker] 🔥 ĐÃ CÓ ĐỦ ${threshold} BÀI TRƯỢT TRƯỚC ĐÓ! Kích hoạt Warmup Cycle trên bài thứ ${threshold + 1} (Fanpage: "${pageName}")...`);
             consecutiveUnmatchedVideoCount = 0; // Reset lại bộ đếm sau khi đã kích hoạt
+            chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
+            chrome.runtime.sendMessage({
+              action: 'ON_WARMUP_PROGRESS',
+              payload: { current: 0, threshold }
+            }).catch(() => {});
             chrome.runtime.sendMessage({
               action: 'RUN_WARMUP_FLOW',
               payload: {
@@ -259,8 +276,14 @@
           }
         }
       }
-    } else {
-      consecutiveUnmatchedVideoCount = 0; // reset
+    } else if (mediaType === 'VIDEO' && !isVerified) {
+      // Chỉ khi gặp bài Video Ads của Fanpage không tích xanh THỎA MÃN thì mới reset
+      consecutiveUnmatchedVideoCount = 0;
+      chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
+      chrome.runtime.sendMessage({
+        action: 'ON_WARMUP_PROGRESS',
+        payload: { current: 0, threshold: settings.warmupThreshold || 10 }
+      }).catch(() => {});
     }
 
     if (isWarmup) {
@@ -303,7 +326,10 @@
     }
 
     // Nếu bài thỏa mãn (isMatched === true):
-    consecutiveUnmatchedVideoCount = 0; // reset
+    if (mediaType === 'VIDEO' && !isVerified) {
+      consecutiveUnmatchedVideoCount = 0;
+      chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
+    }
     totalMatchedAds++;
     const matchedAd = {
       adId,
