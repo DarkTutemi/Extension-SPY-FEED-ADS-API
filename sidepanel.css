@@ -97,6 +97,7 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
+.top-nav-btn[data-view="view-manual"].active,
 .top-nav-btn[data-view="view-test"].active {
   background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(220, 38, 38, 0.25));
   border-color: rgba(245, 158, 11, 0.5);

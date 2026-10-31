@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ── Quản lý 2 Tab Lớn (Video Ads Hunter vs Test) ─────────────────
+  // ── Quản lý 2 Tab Lớn (Video Ads Hunter vs Manual) ─────────────────
   const topNavBtns = document.querySelectorAll('.top-nav-btn');
   const mainViews = document.querySelectorAll('.main-view');
 
