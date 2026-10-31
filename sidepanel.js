@@ -1240,5 +1240,341 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── 3.4 INOTE SMART DISPATCHER (TỰ ĐỘNG PHÂN LUỒNG DANH SÁCH LINKS) ──
+  const txtInoteUrl = document.getElementById('txtInoteUrl');
+  const btnFetchInote = document.getElementById('btnFetchInote');
+  const fileInoteUpload = document.getElementById('fileInoteUpload');
+  const btnUploadTxtFile = document.getElementById('btnUploadTxtFile');
+  const txtInoteLinkList = document.getElementById('txtInoteLinkList');
+  const btnClearInoteList = document.getElementById('btnClearInoteList');
+  const badgeTotalLinks = document.getElementById('badgeTotalLinks');
+  const badgeFbLinks = document.getElementById('badgeFbLinks');
+  const badgeStoreLinks = document.getElementById('badgeStoreLinks');
+  const selectInoteReaction = document.getElementById('selectInoteReaction');
+  const inputInoteWatchSeconds = document.getElementById('inputInoteWatchSeconds');
+  const chkAutoClickCta = document.getElementById('chkAutoClickCta');
+  const btnRunInoteQueue = document.getElementById('btnRunInoteQueue');
+  const btnStopInoteQueue = document.getElementById('btnStopInoteQueue');
+  const inoteQueueStatusText = document.getElementById('inoteQueueStatusText');
+  const inoteCurrentTaskDetail = document.getElementById('inoteCurrentTaskDetail');
+
+  function classifyLink(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    let url = rawUrl.trim();
+    if (!url) return null;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      if (url.includes('facebook.com') || url.includes('l.facebook.com') || url.includes('.')) {
+        url = 'https://' + url;
+      } else {
+        return null;
+      }
+    }
+
+    // 1. Phân luồng A: Bài viết Facebook (FB Story / Post / Reel / Video)
+    const isFbPost = /facebook\.com\/(?:story\.php|[^\/]+\/posts\/|reel\/|watch\/?\?v=|share\/p\/|share\/r\/)|fb\.watch\//i.test(url);
+
+    // 2. Phân luồng B: Link Mua Hàng Trực Tiếp (Direct Webstore hoặc l.facebook.com)
+    const isFbShim = /l\.facebook\.com\/l\.php/i.test(url);
+
+    if (isFbPost) {
+      return {
+        type: 'FB_POST',
+        url: url,
+        label: 'Bài viết Facebook (Warmup + Click CTA)'
+      };
+    } else if (isFbShim) {
+      let target = url;
+      try {
+        const parsed = new URL(url);
+        const u = parsed.searchParams.get('u');
+        if (u) target = decodeURIComponent(u);
+      } catch (e) {}
+      return {
+        type: 'WEBSTORE_DIRECT',
+        url: target,
+        originalUrl: url,
+        label: 'Link Mua Hàng (l.facebook.com)'
+      };
+    } else {
+      return {
+        type: 'WEBSTORE_DIRECT',
+        url: url,
+        originalUrl: url,
+        label: 'Link Mua Hàng Trực Tiếp (7 Bước Super-Buyer)'
+      };
+    }
+  }
+
+  function getInoteLinksFromTextarea() {
+    if (!txtInoteLinkList) return [];
+    const lines = txtInoteLinkList.value.split('\n');
+    const items = [];
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const classified = classifyLink(trimmed);
+      if (classified) items.push(classified);
+    });
+    return items;
+  }
+
+  function updateInoteBadges() {
+    const items = getInoteLinksFromTextarea();
+    const fbCount = items.filter(i => i.type === 'FB_POST').length;
+    const storeCount = items.filter(i => i.type === 'WEBSTORE_DIRECT').length;
+
+    if (badgeTotalLinks) badgeTotalLinks.textContent = `📊 Tổng: ${items.length} link`;
+    if (badgeFbLinks) badgeFbLinks.textContent = `🔵 FB Post (Warmup + Click CTA): ${fbCount}`;
+    if (badgeStoreLinks) badgeStoreLinks.textContent = `🟢 Mua Hàng Trực Tiếp (7 Bước): ${storeCount}`;
+  }
+
+  if (txtInoteLinkList) {
+    txtInoteLinkList.addEventListener('input', updateInoteBadges);
+    updateInoteBadges();
+  }
+
+  if (btnClearInoteList && txtInoteLinkList) {
+    btnClearInoteList.addEventListener('click', () => {
+      txtInoteLinkList.value = '';
+      updateInoteBadges();
+      if (inoteQueueStatusText) inoteQueueStatusText.textContent = 'Đã xóa trắng danh sách links.';
+      if (inoteCurrentTaskDetail) inoteCurrentTaskDetail.style.display = 'none';
+    });
+  }
+
+  // Tải danh sách links từ file .txt trên máy tính
+  if (btnUploadTxtFile && fileInoteUpload && txtInoteLinkList) {
+    btnUploadTxtFile.addEventListener('click', () => {
+      fileInoteUpload.click();
+    });
+
+    fileInoteUpload.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result || '';
+        txtInoteLinkList.value = text.trim();
+        updateInoteBadges();
+        if (inoteQueueStatusText) {
+          inoteQueueStatusText.textContent = `✓ Đã nạp danh sách từ file "${file.name}"`;
+        }
+      };
+      reader.readAsText(file);
+      fileInoteUpload.value = '';
+    });
+  }
+
+  // Tải danh sách links từ https://inote.net/
+  if (btnFetchInote && txtInoteUrl && txtInoteLinkList) {
+    btnFetchInote.addEventListener('click', async () => {
+      const rawInoteUrl = (txtInoteUrl.value || '').trim();
+      if (!rawInoteUrl) {
+        alert('Vui lòng nhập đường dẫn trang Inote (VD: https://inote.net/abcxyz)');
+        return;
+      }
+
+      btnFetchInote.disabled = true;
+      btnFetchInote.textContent = '⏳ Đang tải...';
+      if (inoteQueueStatusText) inoteQueueStatusText.textContent = 'Đang kết nối tới inote.net để bóc tách danh sách links...';
+
+      try {
+        let cleanUrl = rawInoteUrl;
+        if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl;
+
+        const res = await fetch(cleanUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Máy chủ Inote phản hồi lỗi.`);
+        const html = await res.text();
+
+        // Parse HTML
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Bóc tách content từ textarea hoặc element note
+        const textareaEl = doc.querySelector('textarea#content, textarea.content, #note-content, textarea');
+        let noteContent = textareaEl ? (textareaEl.value || textareaEl.textContent) : '';
+
+        if (!noteContent) {
+          const noteEl = doc.querySelector('.note-content, #note_content, .note-body, pre');
+          if (noteEl) noteContent = noteEl.innerText || noteEl.textContent;
+        }
+
+        if (!noteContent) {
+          noteContent = html;
+        }
+
+        // Regex quét tất cả các URL
+        const urlRegex = /(?:https?:\/\/|l\.facebook\.com\/)[^\s"'<>\n\r]+/gi;
+        const matches = (noteContent.match(urlRegex) || []).map(u => u.trim().replace(/[.,;)]+$/, '')).filter(u => u.length > 8);
+        const uniqueLinks = Array.from(new Set(matches));
+
+        if (uniqueLinks.length === 0) {
+          alert('Không tìm thấy link nào trong trang Inote này. Bạn có thể mở inote và copy nội dung dán thẳng vào ô bên dưới!');
+          if (inoteQueueStatusText) inoteQueueStatusText.textContent = 'Không tìm thấy URL hợp lệ trong note.';
+        } else {
+          txtInoteLinkList.value = uniqueLinks.join('\n');
+          updateInoteBadges();
+          if (inoteQueueStatusText) {
+            inoteQueueStatusText.innerHTML = `<span style="color:#34d399; font-weight:600;">✓ Đã tải thành công ${uniqueLinks.length} links từ Inote!</span>`;
+          }
+        }
+      } catch (err) {
+        console.error('[Inote Fetch] Lỗi:', err);
+        alert('Không thể tự động tải từ link Inote này (do cấu hình mạng hoặc trang yêu cầu đăng nhập).\n\nBạn có thể mở Inote trên trình duyệt, copy toàn bộ link và dán trực tiếp vào khung "Danh sách links" bên dưới!');
+        if (inoteQueueStatusText) inoteQueueStatusText.textContent = 'Lỗi tải inote: ' + err.message;
+      } finally {
+        btnFetchInote.disabled = false;
+        btnFetchInote.textContent = '📥 Tải Link';
+      }
+    });
+  }
+
+  // ── BỘ ĐIỀU PHỐI HÀNG ĐỢI TUẦN TỰ (INOTE QUEUE RUNNER) ──────────────
+  let inoteQueueState = {
+    isRunning: false,
+    items: [],
+    currentIndex: 0
+  };
+
+  function stopInoteQueue() {
+    inoteQueueState.isRunning = false;
+    if (btnRunInoteQueue) {
+      btnRunInoteQueue.disabled = false;
+      btnRunInoteQueue.style.display = 'flex';
+      btnRunInoteQueue.innerHTML = '<span>🚀 Bắt Đầu Tự Động Phân Luồng</span>';
+    }
+    if (btnStopInoteQueue) {
+      btnStopInoteQueue.style.display = 'none';
+    }
+    if (inoteQueueStatusText) {
+      inoteQueueStatusText.innerHTML = '<span style="color:#ef4444; font-weight:600;">⏹️ Đã dừng tiến trình phân luồng.</span>';
+    }
+    if (inoteCurrentTaskDetail) {
+      inoteCurrentTaskDetail.style.display = 'none';
+    }
+  }
+
+  function processNextInoteQueueItem() {
+    if (!inoteQueueState.isRunning) return;
+
+    if (inoteQueueState.currentIndex >= inoteQueueState.items.length) {
+      // Đã hoàn tất toàn bộ danh sách!
+      inoteQueueState.isRunning = false;
+      if (btnRunInoteQueue) {
+        btnRunInoteQueue.disabled = false;
+        btnRunInoteQueue.style.display = 'flex';
+        btnRunInoteQueue.innerHTML = '<span>🚀 Bắt Đầu Tự Động Phân Luồng</span>';
+      }
+      if (btnStopInoteQueue) {
+        btnStopInoteQueue.style.display = 'none';
+      }
+      if (inoteQueueStatusText) {
+        inoteQueueStatusText.innerHTML = `<span style="color:#34d399; font-weight:700;">🎉 ĐÃ HOÀN TẤT TOÀN BỘ DANH SÁCH (${inoteQueueState.items.length} LINKS)!</span>`;
+      }
+      if (inoteCurrentTaskDetail) {
+        inoteCurrentTaskDetail.innerHTML = '<span style="color:#10b981;">Tất cả bài viết Facebook và link Webstore đã được tương tác & nuôi Pixel thành công.</span>';
+      }
+      return;
+    }
+
+    const item = inoteQueueState.items[inoteQueueState.currentIndex];
+    const total = inoteQueueState.items.length;
+    const idxDisplay = inoteQueueState.currentIndex + 1;
+
+    const rType = selectInoteReaction ? selectInoteReaction.value : 'RANDOM';
+    const watchSec = inputInoteWatchSeconds ? (parseInt(inputInoteWatchSeconds.value, 10) || 15) : 15;
+    const shouldClickCta = chkAutoClickCta ? chkAutoClickCta.checked : true;
+
+    if (inoteQueueStatusText) {
+      inoteQueueStatusText.innerHTML = `<b>[Link ${idxDisplay}/${total}]</b> Đang xử lý: <span style="color:#a78bfa; font-weight:600;">${escapeHTML(item.label)}</span>`;
+    }
+
+    if (item.type === 'FB_POST') {
+      if (inoteCurrentTaskDetail) {
+        inoteCurrentTaskDetail.style.display = 'block';
+        inoteCurrentTaskDetail.innerHTML = `Đang mở bài viết FB -> Xem video (${watchSec}s) & Thả ${rType}...${shouldClickCta ? ' (Tự động click link CTA nối tiếp 7 bước)' : ''}`;
+      }
+
+      chrome.runtime.sendMessage({
+        action: 'RUN_WARMUP_FLOW',
+        payload: {
+          postUrl: item.url,
+          reactionType: rType,
+          watchSeconds: watchSec,
+          autoClickCta: shouldClickCta,
+          isManualTest: true
+        }
+      }, (res) => {
+        if (!res?.success) {
+          console.warn('[Inote Queue] Lỗi khởi chạy Warmup:', res?.error);
+        }
+      });
+    } else if (item.type === 'WEBSTORE_DIRECT') {
+      if (inoteCurrentTaskDetail) {
+        inoteCurrentTaskDetail.style.display = 'block';
+        inoteCurrentTaskDetail.innerHTML = `Đang mở trang Store trực tiếp -> Thực thi 7 bước Super-Buyer Pixel...<br><span style="color:#94a3b8; font-size:10px;">${escapeHTML(item.url.substring(0, 75))}...</span>`;
+      }
+
+      chrome.runtime.sendMessage({
+        action: 'RUN_STORE_FLOW',
+        payload: {
+          targetUrl: item.url,
+          adId: `INOTE_${Date.now()}`
+        }
+      }, (res) => {
+        if (!res?.success) {
+          console.warn('[Inote Queue] Lỗi khởi chạy Webstore:', res?.error);
+        }
+      });
+    }
+  }
+
+  if (btnRunInoteQueue) {
+    btnRunInoteQueue.addEventListener('click', () => {
+      const items = getInoteLinksFromTextarea();
+      if (items.length === 0) {
+        alert('Danh sách links đang trống! Vui lòng nhập link Inote hoặc dán danh sách link vào ô textarea trước khi bắt đầu.');
+        return;
+      }
+
+      inoteQueueState = {
+        isRunning: true,
+        items: items,
+        currentIndex: 0
+      };
+
+      btnRunInoteQueue.style.display = 'none';
+      if (btnStopInoteQueue) btnStopInoteQueue.style.display = 'block';
+
+      processNextInoteQueueItem();
+    });
+  }
+
+  if (btnStopInoteQueue) {
+    btnStopInoteQueue.addEventListener('click', stopInoteQueue);
+  }
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'INOTE_TASK_STEP_UPDATED') {
+      const { step, targetUrl } = message.payload || {};
+      if (inoteCurrentTaskDetail) {
+        inoteCurrentTaskDetail.style.display = 'block';
+        if (step === 'WARMUP_CTA_TRANSITION') {
+          inoteCurrentTaskDetail.innerHTML = `<span style="color:#34d399; font-weight:600;">⚡ Đã tìm thấy link CTA mua hàng!</span> Đang chuyển tiếp sang 7 bước Super-Buyer...<br><span style="color:#94a3b8; font-size:10px;">${escapeHTML(String(targetUrl || '').substring(0, 75))}...</span>`;
+        }
+      }
+    } else if (message.action === 'INOTE_ITEM_FINISHED') {
+      if (inoteQueueState.isRunning) {
+        if (inoteCurrentTaskDetail) {
+          inoteCurrentTaskDetail.innerHTML = `<span style="color:#10b981; font-weight:600;">✓ Hoàn tất mục ${inoteQueueState.currentIndex + 1}/${inoteQueueState.items.length}!</span> Đang chuyển sang link tiếp theo sau 2 giây...`;
+        }
+        inoteQueueState.currentIndex++;
+        setTimeout(() => {
+          processNextInoteQueueItem();
+        }, 2000);
+      }
+    }
+  });
+
   init();
 });

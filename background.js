@@ -750,6 +750,81 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                       clearInterval(timer);
                       const bannerEl = document.getElementById('fb-hunter-warmup-hud');
                       if (bannerEl) bannerEl.style.borderColor = '#10b981';
+
+                      // Nếu có cờ shouldAutoClickCta: Tìm link mua hàng CTA và tự động chuyển sang 7 bước Super-Buyer
+                      if (shouldAutoClickCta) {
+                        function extractPostStoreUrl() {
+                          const scope = findPostScope();
+
+                          // 1. Quét thẻ <a> có l.facebook.com hoặc webstore domain
+                          const allAnchors = Array.from(scope.querySelectorAll('a[href]'));
+                          for (const a of allAnchors) {
+                            const rawHref = a.getAttribute('href') || '';
+                            if (rawHref.includes('l.facebook.com/l.php')) {
+                              try {
+                                const parsed = new URL(rawHref.startsWith('http') ? rawHref : 'https://www.facebook.com' + rawHref);
+                                const u = parsed.searchParams.get('u');
+                                if (u) {
+                                  const decoded = decodeURIComponent(u);
+                                  if (decoded.startsWith('http') && !decoded.includes('facebook.com')) return decoded;
+                                }
+                              } catch(e) {}
+                            } else if (rawHref.startsWith('http') && !rawHref.includes('facebook.com') && !rawHref.includes('fb.com')) {
+                              return rawHref;
+                            }
+                          }
+
+                          // 2. Quét nút CTA (Shop now, Order now, v.v.)
+                          const ctaBtnKeywords = ['shop now', 'mua ngay', 'order now', 'đặt hàng', 'xem thêm', 'see details', 'learn more', 'tìm hiểu thêm', 'get offer'];
+                          const allBtns = Array.from(scope.querySelectorAll('div[role="button"], a[role="link"], span, div'));
+                          for (const b of allBtns) {
+                            const text = (b.innerText || b.textContent || b.getAttribute('aria-label') || '').toLowerCase().trim();
+                            if (ctaBtnKeywords.some(kw => text === kw || text.includes(kw))) {
+                              const parentAnchor = b.closest('a') || b.parentElement?.querySelector('a') || b.parentElement?.parentElement?.querySelector('a');
+                              if (parentAnchor) {
+                                const href = parentAnchor.getAttribute('href') || '';
+                                if (href.includes('l.facebook.com/l.php')) {
+                                  try {
+                                    const parsed = new URL(href.startsWith('http') ? href : 'https://www.facebook.com' + href);
+                                    const u = parsed.searchParams.get('u');
+                                    if (u) {
+                                      const decoded = decodeURIComponent(u);
+                                      if (decoded.startsWith('http') && !decoded.includes('facebook.com')) return decoded;
+                                    }
+                                  } catch(e) {}
+                                } else if (href.startsWith('http') && !href.includes('facebook.com')) {
+                                  return href;
+                                }
+                              }
+                            }
+                          }
+
+                          // 3. Quét link store trực tiếp trong text caption
+                          const postText = scope.innerText || document.body.innerText || '';
+                          const urlMatches = postText.match(/https?:\/\/(?!www\.facebook\.com|facebook\.com|fb\.com)[^\s"'<>]+/gi) || [];
+                          for (const u of urlMatches) {
+                            const cleanU = u.trim().replace(/[.,;)]+$/, '');
+                            if (cleanU.length > 10 && !cleanU.includes('facebook.com')) {
+                              return cleanU;
+                            }
+                          }
+
+                          return null;
+                        }
+
+                        const foundStoreUrl = extractPostStoreUrl();
+                        if (foundStoreUrl) {
+                          if (hud) hud.innerHTML = `<span style="color:#34d399; font-weight:700;">⚡ TÌM THẤY LINK CTA!</span> Đang mở Store và chạy 7 bước Super-Buyer...`;
+                          setTimeout(() => {
+                            chrome.runtime.sendMessage({
+                              action: 'WARMUP_TRANSITION_TO_STORE',
+                              payload: { targetUrl: foundStoreUrl, postUrl: location.href, originalTabId: currentTabId }
+                            }).catch(() => {});
+                          }, 1500);
+                          return;
+                        }
+                      }
+
                       if (rType === 'NONE') {
                         if (hud) hud.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ HOÀN TẤT WARMUP!</span> Đã xem video (${seconds}s). Tab được giữ nguyên để bạn kiểm tra.`;
                       } else {
@@ -759,7 +834,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                   }, 1000);
                 },
-                args: [postId || '', reactionType, reactionLabel, watchDuration, pageName || '', currentUserId || '', warmupTab.id]
+                args: [postId || '', reactionType, reactionLabel, watchDuration, pageName || '', currentUserId || '', warmupTab.id, payload.autoClickCta === true]
               }).catch((err) => {
                 console.warn('[Warmup] Lỗi inject script:', err.message);
               });
@@ -800,6 +875,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           runWarmupTab(currentUserId);
         }
       });
+
+      return true;
+    }
+
+    // ── XỬ LÝ CHUYỂN TIẾP TỰ ĐỘNG TỪ WARMUP SANG 7 BƯỚC SUPER-BUYER ──
+    case 'WARMUP_TRANSITION_TO_STORE': {
+      const { targetUrl, postUrl, originalTabId } = payload;
+      console.log('[Background] Tự động chuyển tiếp từ Warmup Post sang Super-Buyer Store Flow:', targetUrl);
+
+      // Đóng tab Warmup FB an toàn sau 1.2s để chuyển sự chú ý sang tab Webstore
+      if (originalTabId) {
+        setTimeout(() => {
+          chrome.tabs.remove(originalTabId).catch(() => {});
+        }, 1200);
+      }
+
+      // Thông báo cho Sidepanel trạng thái chuyển tiếp
+      chrome.runtime.sendMessage({
+        action: 'INOTE_TASK_STEP_UPDATED',
+        payload: { step: 'WARMUP_CTA_TRANSITION', targetUrl, postUrl }
+      }).catch(() => {});
+
+      // Mở Webstore và kích hoạt 7 bước Super-Buyer
+      handleMessage({
+        action: 'RUN_STORE_FLOW',
+        payload: { targetUrl, postUrl }
+      }, sender, sendResponse);
 
       return true;
     }
@@ -868,6 +970,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.tabs.update(scannerState.activeTabId, { active: true }).catch(() => {});
       }
       chrome.runtime.sendMessage({ action: 'ON_STORE_FLOW_FINISHED', payload }).catch(() => {});
+      chrome.runtime.sendMessage({ action: 'INOTE_ITEM_FINISHED', payload: { type: 'STORE_FLOW', payload } }).catch(() => {});
       break;
     }
 

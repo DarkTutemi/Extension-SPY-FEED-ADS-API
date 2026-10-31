@@ -286,7 +286,101 @@
 
   <!-- TAB LỚN 2: CHẾ ĐỘ THỬ NGHIỆM THỦ CÔNG (MANUAL) -->
   <div class="main-view" id="view-manual" style="padding: 12px; display: none; flex-direction: column; gap: 12px;">
-    <!-- Demo Test 7-Step Super-Buyer Accordion -->
+    <!-- Module Đỉnh Cao: Inote Smart Dispatcher & Tự Động Phân Luồng Link -->
+    <section class="settings-panel inote-dispatcher-panel" style="border: 1px solid rgba(16, 185, 129, 0.4); background: rgba(16, 185, 129, 0.05); margin-bottom: 0; border-radius: 8px;">
+      <div class="settings-header" style="cursor: default; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;">
+        <span class="settings-title" style="color: #34d399; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+          <span>⚡</span>
+          Inote Smart Dispatcher (Tự Động Phân Luồng Link)
+        </span>
+        <span class="status-badge" style="background: rgba(16, 185, 129, 0.2); color: #a7f3d0; font-size: 10px; padding: 2px 8px; border-radius: 12px;">Auto Route</span>
+      </div>
+
+      <div style="padding: 12px 14px 14px 14px; display: flex; flex-direction: column; gap: 10px;">
+        <!-- Nhập link Inote.net trực tiếp hoặc tải từ File -->
+        <div>
+          <label for="txtInoteUrl" style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 4px;">Nguồn file Inote (https://inote.net/...):</label>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="txtInoteUrl" class="code-input" placeholder="https://inote.net/r7d3kp..." style="flex: 1; font-size: 11px; padding: 7px 10px;">
+            <button class="btn-primary" id="btnFetchInote" style="background: #059669; color: #fff; font-weight: 600; padding: 7px 12px; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; font-size: 11px;">
+              📥 Tải Link
+            </button>
+            <input type="file" id="fileInoteUpload" accept=".txt,.log" style="display: none;">
+            <button class="btn-primary" id="btnUploadTxtFile" style="background: #334155; color: #e2e8f0; font-weight: 500; padding: 7px 10px; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; font-size: 11px;" title="Mở danh sách link từ file .txt trên máy tính">
+              📂 File .txt
+            </button>
+          </div>
+        </div>
+
+        <!-- Khung Textarea danh sách link (List Links) -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="txtInoteLinkList" style="font-size: 11px; color: #94a3b8;">Danh sách links (Mỗi dòng 1 link - Hệ thống tự nhận diện):</label>
+            <button id="btnClearInoteList" style="background: transparent; border: none; color: #ef4444; font-size: 10px; cursor: pointer; text-decoration: underline;">Xóa trắng</button>
+          </div>
+          <textarea id="txtInoteLinkList" class="code-input" rows="5" placeholder="Dán link bài viết Facebook hoặc link webstore vào đây...
+https://www.facebook.com/story.php?story_fbid=1008695106891361&id=61552645706612
+https://l.facebook.com/l.php?u=https%3A%2F%2Fgravityglidersco.com%2Fproducts%2Fgravity-glider...
+https://gravityglidersco.com/products/gravity-glider?fbclid=..." style="width: 100%; font-size: 10.5px; line-height: 1.4; padding: 8px 10px; resize: vertical;">https://www.facebook.com/story.php?story_fbid=1008695106891361&id=61552645706612
+https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2FlbQIxMABwZG9mAWJyaWQRMUpCVENXMmdTdnB1U0FkbFNzcnRjBmFwcF9pZBAyMjIwMzkxNzg4MjAwODkyAAEfvMzQ8gbwkHrr8Cre7mPvcHRkS5MjGrGOlAKCogsEI2ArjrH7nD-g3eO4iIY_aem_b_X0gKAs7g45tRhrFlOAsg</textarea>
+        </div>
+
+        <!-- Live Badges Thống Kê Phân Loại -->
+        <div style="display: flex; gap: 6px; flex-wrap: wrap; font-size: 10.5px;">
+          <span id="badgeTotalLinks" style="background: #1e293b; color: #cbd5e1; padding: 3px 8px; border-radius: 4px; border: 1px solid #334155;">📊 Tổng: 2 link</span>
+          <span id="badgeFbLinks" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.3);">🔵 FB Post (Warmup + Click CTA): 1</span>
+          <span id="badgeStoreLinks" style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3);">🟢 Mua Hàng Trực Tiếp (7 Bước): 1</span>
+        </div>
+
+        <!-- Cấu hình chạy cho danh sách -->
+        <div style="background: rgba(15, 23, 42, 0.6); padding: 8px 10px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.05); display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="flex: 1;">
+              <label for="selectInoteReaction" style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 2px;">Reaction FB Post:</label>
+              <select id="selectInoteReaction" class="code-input" style="font-size: 10.5px; padding: 5px; width: 100%; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px;">
+                <option value="RANDOM" selected>🎲 Random (Tim, Like...)</option>
+                <option value="NONE">👁️ Chỉ xem video (Không thả Reaction)</option>
+                <option value="LOVE">❤️ Yêu thích (Love)</option>
+                <option value="LIKE">👍 Thích (Like)</option>
+                <option value="CARE">🥰 Thương thương</option>
+                <option value="HAHA">😂 Haha</option>
+                <option value="WOW">😮 Wow</option>
+              </select>
+            </div>
+            <div style="width: 100px;">
+              <label for="inputInoteWatchSeconds" style="font-size: 10px; color: #94a3b8; display: block; margin-bottom: 2px;">Xem video FB:</label>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <input type="number" id="inputInoteWatchSeconds" value="15" min="3" max="60" style="width: 50px; font-size: 10.5px; padding: 4px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px;">
+                <span style="font-size: 10px; color: #64748b;">giây</span>
+              </div>
+            </div>
+          </div>
+
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #cbd5e1; cursor: pointer;">
+            <input type="checkbox" id="chkAutoClickCta" checked style="accent-color: #10b981;">
+            <span>Tự động click link CTA trong bài FB để tiếp tục 7 bước Super-Buyer</span>
+          </label>
+        </div>
+
+        <!-- Cụm nút hành động -->
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-primary" id="btnRunInoteQueue" style="flex: 1; background: linear-gradient(135deg, #059669, #0284c7); color: #fff; font-weight: 700; padding: 9px 14px; border: none; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.35);">
+            <span>🚀 Bắt Đầu Tự Động Phân Luồng</span>
+          </button>
+          <button id="btnStopInoteQueue" style="display: none; background: #dc2626; color: #fff; font-weight: 600; padding: 9px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 11px;">
+            ⏹️ Dừng Lại
+          </button>
+        </div>
+
+        <!-- Trạng thái & Monitor Hàng Đợi -->
+        <div id="inoteQueueMonitor" style="background: #090d16; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 10px; font-size: 11px; min-height: 28px; display: flex; flex-direction: column; gap: 4px;">
+          <div id="inoteQueueStatusText" style="color: #64748b;">Sẵn sàng. Bấm nút phía trên để bắt đầu phân luồng tuần tự.</div>
+          <div id="inoteCurrentTaskDetail" style="font-size: 10.5px; color: #38bdf8; display: none;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Accordion Test Đơn Lẻ: Demo Test 7-Step Super-Buyer Accordion -->
     <section class="settings-panel demo-test-panel" style="border: 1px solid rgba(139, 92, 246, 0.4); background: rgba(139, 92, 246, 0.05); margin-bottom: 0; border-radius: 8px;">
       <div class="settings-header" style="cursor: default; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
         <span class="settings-title" style="color: #a78bfa; font-weight: 600; font-size: 12.5px; display: flex; align-items: center; gap: 6px;">
