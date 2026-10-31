@@ -445,6 +445,11 @@ select option {
   color: var(--text-secondary);
   border-color: rgba(148, 163, 184, 0.3);
 }
+.tab-badge.test-badge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
 
 /* Tab Content Visibility */
 .tab-content {

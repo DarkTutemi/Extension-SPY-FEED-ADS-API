@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabContents = document.querySelectorAll('.tab-content');
   const tabAdsBadge = document.getElementById('tabAdsBadge');
   const tabLogsBadge = document.getElementById('tabLogsBadge');
+  const tabTestBadge = document.getElementById('tabTestBadge');
 
   // Ads List
   const btnExportCSV = document.getElementById('btnExportCSV');
