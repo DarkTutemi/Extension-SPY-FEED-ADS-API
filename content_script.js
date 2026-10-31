@@ -877,16 +877,22 @@
       ));
 
       for (const card of cards) {
+        // LOẠI TRỪ 100%: Bài viết trong Group (Nhóm)
+        if (card.querySelector('a[href*="/groups/"]')) continue;
+
         const text = card.innerText || '';
         const hasLinkshim = Boolean(card.querySelector('a[href*="l.facebook.com/l.php"], a[href*="fbclid="], a[target="_blank"]:not([href*="facebook.com"])'));
-        const hasCtaText = /shop\s*now|order\s*now|learn\s*more|sign\s*up|get\s*offer|buy\s*now|claim\s*offer|open\s*now|try\s*it|install\s*now/i.test(text);
+        const hasCtaText = /shop\s*now|order\s*now|learn\s*more|sign\s*up|get\s*offer|buy\s*now|claim\s*offer|install\s*now|mua\s*ngay|đặt\s*ngay/i.test(text);
         const hasDomainCard = /[a-zA-Z0-9-]+\.(?:com|co|store|shop|io|net|org)\b/i.test(text);
-        const hasSponsored = text.includes('Sponsored') || text.includes('Được tài trợ') || text.includes('Ad ·') || text.includes('Ad\n') || Boolean(card.querySelector('svg[aria-label*="Sponsored"], a[href*="/ads/about/"]'));
+        const hasSponsored = text.includes('Sponsored') || text.includes('Được tài trợ') || text.includes('Ad ·') || text.includes('Ad\n') || Boolean(card.querySelector('svg[aria-label*="Sponsored" i], svg[aria-label*="Được tài trợ" i], a[href*="/ads/about/"], a[href*="/ad_preferences/"]'));
 
         // Trích xuất dữ liệu DOM
         const domData = extractDataFromDomCard(card);
         const { pageName } = domData;
         if (!pageName || pageName === 'Facebook' || pageName === 'Unknown Page') continue;
+
+        // Bỏ qua nếu pageUrl là group
+        if (domData.pageUrl && domData.pageUrl.includes('/groups/')) continue;
 
         // Trích xuất pageId từ pageUrl hoặc profile.php?id=...
         let pageId = null;
@@ -921,7 +927,11 @@
                         {};
 
         const isKnownAd = Boolean(graphqlInfo.adId);
-        const isAdDom = hasSponsored || domData.buttonText || (hasLinkshim && (hasDomainCard || hasCtaText)) || isKnownAd;
+        // TIÊU CHUẨN XÁC ĐỊNH ADS NGHIÊM NGẶT:
+        // 1. Được xác nhận là Ad từ GraphQL (sponsored_data)
+        // 2. Hoặc DOM có nhãn Sponsored / Được tài trợ
+        // 3. Hoặc có link out linkshim kèm CTA button mua hàng / domain card
+        const isAdDom = isKnownAd || hasSponsored || (hasLinkshim && (hasDomainCard || hasCtaText) && domData.buttonText);
         if (!isAdDom) continue;
 
         const adKey = String(graphqlInfo.adId || `dom_${pageName}_${domData.targetUrl || text.substring(0, 30).replace(/\s+/g, '_')}`);

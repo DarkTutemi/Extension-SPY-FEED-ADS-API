@@ -223,7 +223,7 @@ Lưu lại toàn bộ các bài quảng cáo xuất hiện trên feed (kể cả
 4. **`Tích xanh` (Verified):** Lọc riêng các bài quảng cáo thuộc các Fanpage có tích xanh (thương hiệu lớn).
 5. **`Thỏa mãn` (Matched):** Chỉ xem các bài vượt qua 5 tiêu chí.
 6. **`Bị loại` (Rejected):** Xem các bài không đạt kèm danh sách lý do chi tiết.
-7. **`Warmup` (Warmup):** Lọc riêng toàn bộ các bài quảng cáo đã được hệ thống kích hoạt chu kỳ tương tác **Warmup** (sau 10 bài trượt: bắn GraphQL reaction LOVE/LIKE và giữ tab xem video 15s). Người dùng có thể bấm **📥 Tải .log** hoặc **JSON** để xuất riêng tệp logfile các bài đã thực hiện Warmup.
+7. **`Warmup` (Warmup):** Lọc riêng toàn bộ các bài quảng cáo đã được hệ thống kích hoạt chu kỳ tương tác **Warmup** (sau 10 bài video ads không tích xanh trượt tiêu chí: tương tác bài thứ 11, bắn GraphQL reaction LOVE/LIKE và giữ tab xem video 15s). Người dùng có thể bấm **📥 Tải .log** hoặc **JSON** để xuất riêng tệp logfile các bài đã thực hiện Warmup.
 
 #### Checklist Thẩm Định Trực Quan Trên Từng Log Card:
 Mỗi card trong tab nhật ký đều in ra một checklist gồm 5 dòng:
@@ -232,7 +232,7 @@ Mỗi card trong tab nhật ký đều in ra một checklist gồm 5 dòng:
 - `✓ Fanpage chưa tích xanh (Shop thực chiến)` hoặc `✗ Fanpage có tích xanh (Thương hiệu lớn)`
 - `✓ Đủ Like (850 / cần >= 500)` hoặc `✗ Chưa đủ Like (42 / cần >= 500)`
 - `✓ Tương tác tự nhiên & Comment/Share chuẩn tỉ lệ 1/2` hoặc `✗ Tỉ lệ lệch / Buff share ảo`
-- *Nếu bài được thực hiện Warmup:* Xuất hiện thêm huy hiệu rực rỡ `🔥 ĐÃ WARMUP` và dòng kiểm tra `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 10 trượt: Thả Reaction & Xem 15s)`.
+- *Nếu bài được thực hiện Warmup:* Xuất hiện thêm huy hiệu rực rỡ `🔥 ĐÃ WARMUP` và dòng kiểm tra `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 11 sau 10 bài video ads không tích xanh trượt: Thả Reaction & Xem 15s)`.
 
 ---
 
@@ -361,11 +361,11 @@ extension-find-ads/
 - **Cơ chế kích hoạt & Quy tắc lọc:**
   - Chế độ Warmup **CHỈ ÁP DỤNG & CHỈ ĐẾM CÁC BÀI VIDEO ADS CỦA FANPAGE CHƯA TÍCH XANH** (`mediaType === 'VIDEO' && !isVerified`).
   - **Quy tắc bỏ qua Tích xanh:** Mọi bài Video Ads xuất phát từ Fanpage có tích xanh (`isVerified === true`) đều **HOÀN TOÀN KHÔNG ĐƯỢC ĐẾM**, đồng thời **KHÔNG BỊ RESET** bộ đếm (Ví dụ: Đã đếm được 8 bài video ads chưa tích xanh trượt tiêu chí, tiếp theo xuất hiện 2 bài video ads có tích xanh $\rightarrow$ Bộ đếm vẫn bảo lưu chính xác giá trị 8, tiếp tục chờ bài video ad chưa tích xanh tiếp theo để đếm thành 9).
-  - Khi bộ đếm tích lũy đủ `warmupThreshold` (mặc định 10 bài) video ads chưa tích xanh trượt tiêu chí: Hệ thống sẽ chọn chính bài video ad không tích xanh đó để thực hiện **Warmup Interaction**:
-  1. Mở bài post trong tab nền.
-  2. Bắn GraphQL mutation `CometUFIFeedbackReactMutation` (doc_id `27646120298312844`) thả reaction ngẫu nhiên (LIKE, LOVE, CARE).
+  - Khi bộ đếm tích lũy đủ `warmupThreshold` (mặc định 10 bài) video ads chưa tích xanh trượt tiêu chí: Hệ thống sẽ chọn chính bài video ad không tích xanh tiếp theo (bài thứ 11) để thực hiện **Warmup Interaction**:
+  1. Mở bài post trong tab nền (hoặc tab nổi).
+  2. Bắn GraphQL mutation `CometUFIFeedbackReactMutation` (doc_id `27646120298312844`) thả reaction ngẫu nhiên (LIKE, LOVE).
   3. Giữ tab xem video trong `warmupWatchSeconds` (mặc định 15 giây) để tạo tín hiệu người dùng thật (High Watch Time).
-  4. Đóng tab warmup, reset bộ đếm về 0 và tiếp tục chu kỳ quét Newsfeed.
+  4. Sau khi hoàn tất xem video: Giữ nguyên tab để kiểm tra, reset bộ đếm về 0 và tiếp tục chu kỳ quét Newsfeed.
 
 ### 11.2. Quy Trình 7 Bước Giả Lập Khách Hàng VIP (Pixel Super-Buyer Flow)
 Khi một bài Video Ad **thỏa mãn toàn bộ tiêu chí lọc**, hệ thống mở URL webstore ngoài và tự động kích hoạt kịch bản **Super-Buyer Pixel**:
