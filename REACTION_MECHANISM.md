@@ -305,6 +305,18 @@ Trong mục **Cài đặt tiêu chí lọc**, người dùng có thể linh ho�
 2. **`NONE` (👁️ Chỉ xem Video, Không thả Reaction):** Dành riêng cho các kịch bản nuôi tài khoản cần độ tự nhiên cao chỉ lướt xem nội dung video. Hệ thống sẽ cuộn đến video, bật video, đếm ngược đủ thời gian xem (mặc định 15 giây) và **hoàn toàn không kích hoạt GraphQL hay click nút cảm xúc**, sau đó kết thúc chu kỳ thành công.
 3. **Reaction Cố Định (`LOVE`, `LIKE`, `CARE`, `HAHA`, `WOW`):** Dành cho mục đích test A/B hoặc các kịch bản định hướng tài khoản chỉ bày tỏ một loại cảm xúc duy nhất.
 
+### 4.6. Danh Sách Loại Trừ Warmup (Fanpage & Từ Khóa Content)
+
+Để tránh tương tác nhầm vào các Fanpage không mong muốn (đối thủ, niche nhạy cảm, thương hiệu không phù hợp) hoặc nội dung rác, hệ thống trang bị Dialog Loại Trừ Warmup:
+
+- **Loại trừ theo Tên Fanpage (`warmupExcludedPages`):** So khớp không phân biệt hoa thường với tên Fanpage tác giả.
+- **Loại trừ theo Từ khóa Content (`warmupExcludedKeywords`):** Quét toàn bộ nội dung bài viết (caption text, headline, ad message).
+- **Cơ chế nhảy cóc thông minh (Skip & Preserve Progress):**
+  - Khi gặp bài viết thuộc danh sách loại trừ: Hệ thống **KHÔNG** thực hiện Warmup trên bài viết đó (`isWarmup = false`).
+  - **Giữ nguyên bộ đếm:** Bộ đếm bài trượt không bị reset, bảo toàn tiến trình nuôi tài khoản.
+  - Tự động bỏ qua và chuyển sang kiểm tra bài Video Ads tiếp theo ngay lập tức.
+  - Ghi nhận chi tiết trong Audit Checklist của bài viết để người dùng dễ dàng theo dõi.
+
 ---
 
 ## 5. Bảng Ma Trận Kiểm Thử Thực Chiến 100% (Real-World Test Matrix)

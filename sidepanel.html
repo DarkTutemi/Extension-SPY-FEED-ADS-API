@@ -130,6 +130,14 @@
         </select>
       </div>
 
+      <div class="form-row" style="margin-top: 4px;">
+        <label>Danh sách loại trừ Warmup:</label>
+        <button type="button" id="btnOpenExclusionModal" class="btn-exclusion-trigger">
+          <span style="font-size: 13px;">🚫</span>
+          <span id="btnExclusionModalText">Danh sách Fanpage & Từ khóa loại trừ (0)</span>
+        </button>
+      </div>
+
       <div class="filter-notes">
         <div class="note-item">
           <span class="check-icon">🔄</span>
@@ -337,6 +345,52 @@
       </div>
     </main>
   </section>
+
+  <!-- Modal Dialog: Danh Sách Loại Trừ Warmup -->
+  <div class="modal-backdrop" id="warmupExclusionModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-icon">🚫</span>
+          <div>
+            <h3 class="modal-title">Danh Sách Loại Trừ Warmup</h3>
+            <p class="modal-subtitle">Bỏ qua Fanpage hoặc từ khóa content, chuyển sang bài tiếp theo</p>
+          </div>
+        </div>
+        <button type="button" class="btn-modal-close" id="btnCloseExclusionModal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-info-box">
+          <span class="info-icon">💡</span>
+          <span>Nếu bài Video Ads có <strong>Tên Fanpage</strong> hoặc <strong>Content</strong> chứa bất kỳ mục nào dưới đây, hệ thống sẽ <strong>KHÔNG</strong> thực hiện Warmup trên bài đó và giữ nguyên tiến trình để tương tác với bài Video Ads tiếp theo.</span>
+        </div>
+
+        <div class="form-col" style="margin-bottom: 12px;">
+          <label for="txtWarmupExcludedPages" style="display: flex; justify-content: space-between; font-weight: 600; color: #f8fafc; margin-bottom: 6px;">
+            <span>Tên Fanpage loại trừ:</span>
+            <span id="badgeCountExcludedPages" style="color: #f43f5e; font-size: 11px;">0 Fanpage</span>
+          </label>
+          <textarea id="txtWarmupExcludedPages" rows="5" class="code-textarea" placeholder="Nhập tên Fanpage (mỗi dòng 1 tên, không phân biệt hoa thường)...&#10;Ví dụ:&#10;Chilipad&#10;SelenePets&#10;Homeowners vs. Mold" style="font-size: 11.5px; line-height: 1.5;"></textarea>
+          <span style="font-size: 11px; color: #64748b; margin-top: 3px;">So khớp theo tên Fanpage tác giả (chứa chuỗi)</span>
+        </div>
+
+        <div class="form-col">
+          <label for="txtWarmupExcludedKeywords" style="display: flex; justify-content: space-between; font-weight: 600; color: #f8fafc; margin-bottom: 6px;">
+            <span>Từ khóa trong nội dung (Content) loại trừ:</span>
+            <span id="badgeCountExcludedKeywords" style="color: #f43f5e; font-size: 11px;">0 từ khóa</span>
+          </label>
+          <textarea id="txtWarmupExcludedKeywords" rows="5" class="code-textarea" placeholder="Nhập từ khóa nội dung (mỗi dòng 1 từ khóa)...&#10;Ví dụ:&#10;chính trị&#10;scam&#10;thuốc giảm cân&#10;phim" style="font-size: 11.5px; line-height: 1.5;"></textarea>
+          <span style="font-size: 11px; color: #64748b; margin-top: 3px;">So khớp theo nội dung văn bản (caption) và tiêu đề bài viết</span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-modal-cancel" id="btnCancelExclusionModal">Đóng</button>
+        <button type="button" class="btn-modal-save" id="btnSaveExclusionModal">✓ Lưu Danh Sách Loại Trừ</button>
+      </div>
+    </div>
+  </div>
 
   <script src="sidepanel.js"></script>
 </body>

@@ -33,7 +33,9 @@
     warmupEnabled: true,
     warmupThreshold: 10,
     warmupWatchSeconds: 15,
-    warmupReaction: 'RANDOM'
+    warmupReaction: 'RANDOM',
+    warmupExcludedPages: [],
+    warmupExcludedKeywords: []
   };
 
   let consecutiveUnmatchedVideoCount = 0;
@@ -146,6 +148,35 @@
   const pendingGraphqlAds = new Map(); // key: cleanName(pageName) & actorId -> graphqlData
   const pendingGraphqlAdsById = new Map(); // key: postId -> graphqlData
 
+  // Hàm kiểm tra bài viết có thuộc danh sách Fanpage hoặc Từ khóa nội dung bị loại trừ Warmup không
+  function checkWarmupExclusion(pageName, contentText, headline) {
+    const rawPages = Array.isArray(settings.warmupExcludedPages) 
+      ? settings.warmupExcludedPages 
+      : (typeof settings.warmupExcludedPages === 'string' ? settings.warmupExcludedPages.split('\n') : []);
+    const rawKeywords = Array.isArray(settings.warmupExcludedKeywords)
+      ? settings.warmupExcludedKeywords
+      : (typeof settings.warmupExcludedKeywords === 'string' ? settings.warmupExcludedKeywords.split('\n') : []);
+
+    const normPage = (pageName || '').trim().toLowerCase();
+    const fullContent = ((contentText || '') + ' ' + (headline || '')).toLowerCase();
+
+    for (const rawP of rawPages) {
+      const p = rawP.trim().toLowerCase();
+      if (p && normPage && (normPage.includes(p) || p.includes(normPage))) {
+        return { isExcluded: true, reason: `Fanpage "${pageName}" khớp danh sách loại trừ "${rawP.trim()}"` };
+      }
+    }
+
+    for (const rawKw of rawKeywords) {
+      const kw = rawKw.trim().toLowerCase();
+      if (kw && fullContent && fullContent.includes(kw)) {
+        return { isExcluded: true, reason: `Nội dung bài viết chứa từ khóa loại trừ "${rawKw.trim()}"` };
+      }
+    }
+
+    return { isExcluded: false };
+  }
+
   // 3. Logic Đánh Giá Bộ Lọc 5 Tiêu Chí & Sinh Log
   function auditAndFilterAd({ adId, pageName, pageUrl, isVerified, mediaType, videoDuration, videoStreamUrl, likes, comments, shares, buttonText, targetUrl, contentText, headline, domain, postUrl }) {
     if (!adId || processedAdKeys.has(String(adId))) return null;
@@ -254,35 +285,45 @@
         if (isVerified) {
           console.log(`[Warmup Tracker] Bỏ qua Fanpage có tích xanh ("${pageName}"). Giữ nguyên bộ đếm: ${consecutiveUnmatchedVideoCount}/${threshold}`);
         } else {
-          // Chỉ đếm những bài Video Ads thực sự của Fanpage CHƯA có tích xanh
-          if (consecutiveUnmatchedVideoCount < threshold) {
-            consecutiveUnmatchedVideoCount++;
-            console.log(`[Warmup Tracker] Video Ads không tích xanh trượt tiêu chí: ${consecutiveUnmatchedVideoCount}/${threshold} | Fanpage: "${pageName}"`);
-            chrome.storage.local.set({ consecutiveUnmatchedVideoCount });
-            chrome.runtime.sendMessage({
-              action: 'ON_WARMUP_PROGRESS',
-              payload: { current: consecutiveUnmatchedVideoCount, threshold }
-            }).catch(() => {});
+          // Kiểm tra xem Fanpage hoặc Content có nằm trong Danh sách Loại Trừ Warmup hay không
+          const exclusion = checkWarmupExclusion(pageName, contentText, headline);
+          if (exclusion.isExcluded) {
+            console.log(`[Warmup Tracker] 🚫 LOẠI TRỪ WARMUP: ${exclusion.reason} -> Không thực hiện Warmup trên bài này, chuyển sang bài tiếp theo. Bộ đếm giữ nguyên: ${consecutiveUnmatchedVideoCount}/${threshold}`);
+            auditChecks.unshift({
+              pass: false,
+              desc: `🚫 BỎ QUA WARMUP: ${exclusion.reason} (Chuyển sang bài tiếp theo)`
+            });
           } else {
-            // ĐÃ CÓ ĐỦ 10 BÀI TRƯỢT TRƯỚC ĐÓ -> ĐÂY CHÍNH LÀ BÀI THỨ 11!
-            isWarmup = true;
-            console.log(`[Warmup Tracker] 🔥 ĐÃ CÓ ĐỦ ${threshold} BÀI TRƯỢT TRƯỚC ĐÓ! Kích hoạt Warmup Cycle trên bài thứ ${threshold + 1} (Fanpage: "${pageName}")...`);
-            consecutiveUnmatchedVideoCount = 0; // Reset lại bộ đếm sau khi đã kích hoạt
-            chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
-            chrome.runtime.sendMessage({
-              action: 'ON_WARMUP_PROGRESS',
-              payload: { current: 0, threshold }
-            }).catch(() => {});
-            chrome.runtime.sendMessage({
-              action: 'RUN_WARMUP_FLOW',
-              payload: {
-                postUrl: postUrl || location.href,
-                postId: adId,
-                pageName,
-                watchSeconds: settings.warmupWatchSeconds || 15,
-                reactionType: settings.warmupReaction || 'RANDOM'
-              }
-            }).catch(() => {});
+            // Chỉ đếm những bài Video Ads thực sự của Fanpage CHƯA có tích xanh VÀ KHÔNG BỊ LOẠI TRỪ
+            if (consecutiveUnmatchedVideoCount < threshold) {
+              consecutiveUnmatchedVideoCount++;
+              console.log(`[Warmup Tracker] Video Ads không tích xanh trượt tiêu chí: ${consecutiveUnmatchedVideoCount}/${threshold} | Fanpage: "${pageName}"`);
+              chrome.storage.local.set({ consecutiveUnmatchedVideoCount });
+              chrome.runtime.sendMessage({
+                action: 'ON_WARMUP_PROGRESS',
+                payload: { current: consecutiveUnmatchedVideoCount, threshold }
+              }).catch(() => {});
+            } else {
+              // ĐÃ CÓ ĐỦ 10 BÀI TRƯỢT TRƯỚC ĐÓ -> ĐÂY CHÍNH LÀ BÀI THỨ 11!
+              isWarmup = true;
+              console.log(`[Warmup Tracker] 🔥 ĐÃ CÓ ĐỦ ${threshold} BÀI TRƯỢT TRƯỚC ĐÓ! Kích hoạt Warmup Cycle trên bài thứ ${threshold + 1} (Fanpage: "${pageName}")...`);
+              consecutiveUnmatchedVideoCount = 0; // Reset lại bộ đếm sau khi đã kích hoạt
+              chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
+              chrome.runtime.sendMessage({
+                action: 'ON_WARMUP_PROGRESS',
+                payload: { current: 0, threshold }
+              }).catch(() => {});
+              chrome.runtime.sendMessage({
+                action: 'RUN_WARMUP_FLOW',
+                payload: {
+                  postUrl: postUrl || location.href,
+                  postId: adId,
+                  pageName,
+                  watchSeconds: settings.warmupWatchSeconds || 15,
+                  reactionType: settings.warmupReaction || 'RANDOM'
+                }
+              }).catch(() => {});
+            }
           }
         }
       }

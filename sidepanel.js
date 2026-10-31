@@ -28,6 +28,21 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputWarmupWatchSeconds = document.getElementById('inputWarmupWatchSeconds');
   const selectWarmupReactionMode = document.getElementById('selectWarmupReactionMode');
 
+  // Exclusion Modal DOM Elements
+  const btnOpenExclusionModal = document.getElementById('btnOpenExclusionModal');
+  const btnExclusionModalText = document.getElementById('btnExclusionModalText');
+  const warmupExclusionModal = document.getElementById('warmupExclusionModal');
+  const btnCloseExclusionModal = document.getElementById('btnCloseExclusionModal');
+  const btnCancelExclusionModal = document.getElementById('btnCancelExclusionModal');
+  const btnSaveExclusionModal = document.getElementById('btnSaveExclusionModal');
+  const txtWarmupExcludedPages = document.getElementById('txtWarmupExcludedPages');
+  const txtWarmupExcludedKeywords = document.getElementById('txtWarmupExcludedKeywords');
+  const badgeCountExcludedPages = document.getElementById('badgeCountExcludedPages');
+  const badgeCountExcludedKeywords = document.getElementById('badgeCountExcludedKeywords');
+
+  let warmupExcludedPages = [];
+  let warmupExcludedKeywords = [];
+
   // AI Vision & Captcha Controls
   const aiSettingsToggle = document.getElementById('aiSettingsToggle');
   const aiSettingsBody = document.getElementById('aiSettingsBody');
@@ -65,6 +80,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let logsList = [];
   let currentLogFilter = 'all';
 
+  function updateExclusionBadgeUI() {
+    const total = warmupExcludedPages.length + warmupExcludedKeywords.length;
+    if (btnExclusionModalText) {
+      btnExclusionModalText.textContent = `Danh sách Fanpage & Từ khóa loại trừ (${total})`;
+    }
+    if (badgeCountExcludedPages) {
+      badgeCountExcludedPages.textContent = `${warmupExcludedPages.length} Fanpage`;
+    }
+    if (badgeCountExcludedKeywords) {
+      badgeCountExcludedKeywords.textContent = `${warmupExcludedKeywords.length} từ khóa`;
+    }
+  }
+
   // ── Auto-scroll State ─────────────────────────────────────────────
   let isAutoScrollEnabled = true;
   let isMouseInsideLogs = false;
@@ -99,6 +127,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (selectWarmupReactionMode && state.settings.warmupReaction) {
             selectWarmupReactionMode.value = state.settings.warmupReaction;
           }
+          if (Array.isArray(state.settings.warmupExcludedPages)) {
+            warmupExcludedPages = state.settings.warmupExcludedPages;
+          }
+          if (Array.isArray(state.settings.warmupExcludedKeywords)) {
+            warmupExcludedKeywords = state.settings.warmupExcludedKeywords;
+          }
+          updateExclusionBadgeUI();
           if (txtGeminiPool && Array.isArray(state.settings.geminiKeys) && state.settings.geminiKeys.length > 0) {
             txtGeminiPool.value = state.settings.geminiKeys.join('\n');
           }
@@ -117,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Tải danh sách ads đã lưu và trạng thái tự cuộn
-    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey', 'warmupReaction'], (res) => {
+    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey', 'warmupReaction', 'warmupExcludedPages', 'warmupExcludedKeywords'], (res) => {
       adsList = res.matchedAdsList || [];
       logsList = res.adHunterLogs || [];
       if (res.isAutoScrollEnabled !== undefined) {
@@ -126,6 +161,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (selectWarmupReactionMode && res.warmupReaction) {
         selectWarmupReactionMode.value = res.warmupReaction;
       }
+      if (Array.isArray(res.warmupExcludedPages)) {
+        warmupExcludedPages = res.warmupExcludedPages;
+      }
+      if (Array.isArray(res.warmupExcludedKeywords)) {
+        warmupExcludedKeywords = res.warmupExcludedKeywords;
+      }
+      updateExclusionBadgeUI();
       if (txtGeminiPool && Array.isArray(res.geminiKeys) && res.geminiKeys.length > 0) {
         txtGeminiPool.value = res.geminiKeys.join('\n');
       }
@@ -808,15 +850,85 @@ document.addEventListener('DOMContentLoaded', () => {
       warmupEnabled,
       warmupThreshold,
       warmupWatchSeconds,
-      warmupReaction
+      warmupReaction,
+      warmupExcludedPages,
+      warmupExcludedKeywords
     };
 
     chrome.runtime.sendMessage({ action: 'UPDATE_SETTINGS', payload: newSettings }, () => {
-      chrome.storage.local.set({ warmupReaction });
+      chrome.storage.local.set({ warmupReaction, warmupExcludedPages, warmupExcludedKeywords });
       btnSaveSettings.textContent = '✓ Đã lưu cài đặt';
       setTimeout(() => { btnSaveSettings.textContent = 'Lưu cài đặt'; }, 1500);
     });
   });
+
+  // 3.0 Quản lý Dialog Loại Trừ Warmup
+  function openExclusionModal() {
+    if (txtWarmupExcludedPages) txtWarmupExcludedPages.value = warmupExcludedPages.join('\n');
+    if (txtWarmupExcludedKeywords) txtWarmupExcludedKeywords.value = warmupExcludedKeywords.join('\n');
+    updateExclusionBadgeUI();
+    if (warmupExclusionModal) warmupExclusionModal.style.display = 'flex';
+  }
+
+  function closeExclusionModal() {
+    if (warmupExclusionModal) warmupExclusionModal.style.display = 'none';
+  }
+
+  if (btnOpenExclusionModal) {
+    btnOpenExclusionModal.addEventListener('click', openExclusionModal);
+  }
+
+  if (btnCloseExclusionModal) {
+    btnCloseExclusionModal.addEventListener('click', closeExclusionModal);
+  }
+
+  if (btnCancelExclusionModal) {
+    btnCancelExclusionModal.addEventListener('click', closeExclusionModal);
+  }
+
+  if (warmupExclusionModal) {
+    warmupExclusionModal.addEventListener('click', (e) => {
+      if (e.target === warmupExclusionModal) closeExclusionModal();
+    });
+  }
+
+  if (txtWarmupExcludedPages) {
+    txtWarmupExcludedPages.addEventListener('input', () => {
+      const count = txtWarmupExcludedPages.value.split('\n').map(s => s.trim()).filter(Boolean).length;
+      if (badgeCountExcludedPages) badgeCountExcludedPages.textContent = `${count} Fanpage`;
+    });
+  }
+
+  if (txtWarmupExcludedKeywords) {
+    txtWarmupExcludedKeywords.addEventListener('input', () => {
+      const count = txtWarmupExcludedKeywords.value.split('\n').map(s => s.trim()).filter(Boolean).length;
+      if (badgeCountExcludedKeywords) badgeCountExcludedKeywords.textContent = `${count} từ khóa`;
+    });
+  }
+
+  if (btnSaveExclusionModal) {
+    btnSaveExclusionModal.addEventListener('click', () => {
+      warmupExcludedPages = (txtWarmupExcludedPages?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+      warmupExcludedKeywords = (txtWarmupExcludedKeywords?.value || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+      updateExclusionBadgeUI();
+      chrome.storage.local.set({ warmupExcludedPages, warmupExcludedKeywords });
+
+      chrome.runtime.sendMessage({
+        action: 'UPDATE_SETTINGS',
+        payload: {
+          warmupExcludedPages,
+          warmupExcludedKeywords
+        }
+      }, () => {
+        btnSaveExclusionModal.textContent = '✓ Đã lưu danh sách!';
+        setTimeout(() => {
+          btnSaveExclusionModal.textContent = '✓ Lưu Danh Sách Loại Trừ';
+          closeExclusionModal();
+        }, 500);
+      });
+    });
+  }
 
   // 3.1 Lưu Cấu hình Keys AI Vision & Solver
   if (btnSaveAIKeys) {

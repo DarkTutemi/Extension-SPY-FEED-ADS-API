@@ -24,6 +24,8 @@ let scannerState = {
     warmupThreshold: 10,
     warmupWatchSeconds: 15,
     warmupReaction: 'RANDOM',
+    warmupExcludedPages: [],
+    warmupExcludedKeywords: [],
     geminiKeys: [],
     deepseekKey: '',
     twoCaptchaKey: ''
@@ -113,9 +115,15 @@ function executeAutoRefreshTab() {
   chrome.tabs.reload(targetTabId);
 }
 
-chrome.storage.local.get(['adHunterSettings', 'adHunterLogs', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey'], (res) => {
+chrome.storage.local.get(['adHunterSettings', 'adHunterLogs', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey', 'warmupExcludedPages', 'warmupExcludedKeywords'], (res) => {
   if (res.adHunterSettings) {
     scannerState.settings = { ...scannerState.settings, ...res.adHunterSettings };
+  }
+  if (Array.isArray(res.warmupExcludedPages)) {
+    scannerState.settings.warmupExcludedPages = res.warmupExcludedPages;
+  }
+  if (Array.isArray(res.warmupExcludedKeywords)) {
+    scannerState.settings.warmupExcludedKeywords = res.warmupExcludedKeywords;
   }
   if (res.geminiKeys && res.geminiKeys.length > 0) {
     scannerState.settings.geminiKeys = res.geminiKeys;
