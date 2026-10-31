@@ -344,3 +344,55 @@ Trong suốt tiến trình Warmup, Banner HUD trên đầu tab (`#fb-hunter-warm
 3. **Xác nhận kép:** `✓ Đã xác thực 100% từ API: [Tên Reaction]! Đang xem video...`
 4. **Hoàn tất:** Đổi viền xanh lục `#10b981`:  
    `✓ Hoàn tất Warmup! Đã thả [Tên Reaction]. Tab được giữ nguyên để bạn kiểm tra.`
+
+---
+
+## 7. Inote Smart Dispatcher & Tự Động Phân Luồng 2 Chế Độ (Tab Manual)
+
+Nhằm tối ưu hóa quy trình kiểm thử và nuôi tài khoản hàng loạt từ các ghi chú chia sẻ hoặc file danh sách liên kết, hệ thống trang bị module **Inote Smart Dispatcher** tại tab lớn **`🛠️ Manual`**:
+
+### 7.1. Cơ Chế Nhập Liệu & Bóc Tách Đa Nguồn
+- **Tải từ Inote API (`https://inote.net/...`):** Tự động fetch nội dung text thô từ DOM `textarea#content.lined` của Inote, phân tích và trích xuất danh sách link mà không bị chặn CORS hay encoding.
+- **Tải từ File `.txt` nội bộ:** Cho phép người dùng chọn tệp `.txt` từ máy tính để nạp nhanh hàng trăm link.
+- **Dán trực tiếp vào Textarea:** Hỗ trợ nhập thủ công, mỗi dòng một link.
+
+### 7.2. Bộ Phân Loại Kép (Dual-Mode Link Classifier)
+Hệ thống tự động phát hiện và phân loại các liên kết theo 2 luồng độc lập:
+
+1. **Luồng FB Post (`FB_POST`):**
+   - Nhận diện các link Facebook dạng `facebook.com/story.php?...`, `/reel/...`, `/posts/...`.
+   - **Quy trình:** Mở bài viết FB $\to$ Chạy HUD đếm ngược video (3–60s) $\to$ Thả cảm xúc tùy chọn (`RANDOM`, `NONE`, `LOVE`, `CARE`, v.v.) $\to$ Tự động quét nội dung bài viết và các thẻ anchor để tìm link mua hàng CTA (lọc sạch `RightRail`, `Sponsored Sidebar`).
+   - Nếu tìm thấy link CTA và bật cờ `chkAutoClickCta`: Tự động đóng tab Facebook sau 1.2s và chuyển tiếp mượt mà sang chu trình **7 bước Super-Buyer Pixel** trên Webstore đích.
+
+2. **Luồng Mua Hàng Trực Tiếp (`WEBSTORE_DIRECT`):**
+   - Nhận diện các liên kết chuyển hướng Facebook `l.facebook.com/l.php?u=...` (tự động giải mã unwrap URL thực tế) hoặc link webstore trực tiếp (`shopify`, `woocommerce`, v.v. giữ nguyên tham số `fbclid` phục vụ Pixel).
+   - **Quy trình:** Bỏ qua Facebook, mở thẳng trang Store và kích hoạt ngay chu trình **7 bước Super-Buyer Pixel**:
+     - *B1:* Nhận diện nền tảng e-commerce (Shopify, WooCommerce, Wix, v.v.).
+     - *B2:* Lướt ViewContent tự nhiên & chọn biến thể (Variant).
+     - *B3:* Thêm vào giỏ hàng (`AddToCart`) & chuyển sang thanh toán (`InitiateCheckout`).
+     - *B4:* Điền thông tin giao hàng chuẩn US (Emily Davis, khớp State/ZIP, 0 lỗi đỏ React 18).
+     - *B5:* Giả lập nhập thẻ tín dụng PCI (Shopify/Stripe iframes, đếm ngược 10s ghi nhận Pixel AddPaymentInfo).
+     - *B6:* Chuyển sang cổng ví PayPal, kích hoạt Trusted Hardware Click CDP mở popup PayPal thật (10s).
+     - *B7:* Hoàn tất chu trình, đóng tab webstore an toàn và thông báo `STORE_FLOW_COMPLETED`.
+
+### 7.3. Bộ Điều Phối Hàng Đợi (Automated Queue Runner)
+- Thực thi tuần tự từng link trong danh sách.
+- Nghỉ 2 giây giữa các liên kết để đảm bảo tài khoản hoạt động tự nhiên.
+- Monitor trạng thái thời gian thực: Hiển thị thanh tiến trình `[Link X/N]`, chi tiết tác vụ đang xử lý, và phát thông báo `🎉 ĐÃ HOÀN TẤT TOÀN BỘ DANH SÁCH` khi kết thúc.
+
+---
+
+## 8. Kết Quả Kiểm Thử Thực Chiến Mới Nhất Với Link Inote `https://inote.net/OYWsQSTfM2`
+
+Kiểm thử tự động hóa toàn diện qua công nghệ Multi-Agent Teamwork trên profile GPM Login `61577091256835` (cổng CDP `8137`):
+
+| Hạng mục | Tham số / Dữ liệu thực tế | Đánh giá |
+| :--- | :--- | :---: |
+| **Nguồn nạp** | `https://inote.net/OYWsQSTfM2` | **100% OK** |
+| **Bóc tách danh sách** | 2 link bài viết Facebook phân loại chính xác | **100% OK** |
+| **Cấu hình kiểm thử** | Thời gian xem 8s, Reaction `CARE` (Thương thương), Bật Auto Click CTA | **100% OK** |
+| **Thực thi Link 1** | FB Story (`1592654975192822`) $\to$ CARE $\to$ Bắt trúng CTA `kingwwy.com` $\to$ Chạy 7 bước Super-Buyer Store Flow | **100% OK** |
+| **Thực thi Link 2** | FB Story (`3908824396048904`) $\to$ CARE $\to$ Bắt trúng CTA `clarifionodrx.com` $\to$ Chạy 7 bước Super-Buyer Store Flow | **100% OK** |
+| **Trạng thái kết thúc** | `🎉 ĐÃ HOÀN TẤT TOÀN BỘ DANH SÁCH (2 LINKS)!` hiển thị trên Side Panel | **100% OK** |
+| **Nghiệm thu kiểm toán** | Sentinel Victory Audit xác nhận 100% không lỗi | **VICTORY** |
+
