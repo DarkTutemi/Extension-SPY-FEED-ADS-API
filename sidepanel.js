@@ -184,7 +184,36 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ── Quản lý Chuyển Tab ───────────────────────────────────────────
+  // ── Quản lý 2 Tab Lớn (Video Ads Hunter vs Test) ─────────────────
+  const topNavBtns = document.querySelectorAll('.top-nav-btn');
+  const mainViews = document.querySelectorAll('.main-view');
+
+  topNavBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetView = btn.dataset.view;
+      topNavBtns.forEach(b => b.classList.remove('active'));
+      mainViews.forEach(v => {
+        v.classList.remove('active');
+        v.style.display = 'none';
+      });
+
+      btn.classList.add('active');
+      const viewEl = document.getElementById(targetView);
+      if (viewEl) {
+        viewEl.classList.add('active');
+        viewEl.style.display = 'flex';
+      }
+
+      if (targetView !== 'view-hunter') {
+        stopAutoScrollLoop();
+      } else if (activeTabName === 'tab-logs') {
+        startAutoScrollLoop();
+        performAutoScrollStep();
+      }
+    });
+  });
+
+  // ── Quản lý Chuyển Tab Con (Bên trong Video Ads Hunter) ───────────
   tabNavBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetTabId = btn.dataset.tab;
