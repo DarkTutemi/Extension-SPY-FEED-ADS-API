@@ -230,7 +230,7 @@
     let isWarmup = false;
 
     if (!isMatched) {
-      // ── BỘ ĐẾM WARMUP: CHỈ CÓ TÁC DỤNG VÀ CHỈ ĐẾM POST ADS VIDEO KHÔNG CÓ TÍCH XANH ──
+      // ── BỘ ĐẾM WARMUP: CHỈ CÓ TÁC DỤNG VÀ CHỈ ĐẾM POST ADS VIDEO CỦA FANPAGE KHÔNG CÓ TÍCH XANH ──
       if (mediaType === 'VIDEO') {
         const threshold = settings.warmupThreshold || 10;
 
@@ -238,15 +238,15 @@
         if (isVerified) {
           console.log(`[Warmup Tracker] Bỏ qua Fanpage có tích xanh ("${pageName}"). Giữ nguyên bộ đếm: ${consecutiveUnmatchedVideoCount}/${threshold}`);
         } else {
-          // Chỉ đếm những bài Video Ads của Fanpage CHƯA có tích xanh
+          // Chỉ đếm những bài Video Ads thực sự của Fanpage CHƯA có tích xanh
           consecutiveUnmatchedVideoCount++;
-          console.log(`[Warmup Tracker] Video Ads (không tích xanh) trượt tiêu chí: ${consecutiveUnmatchedVideoCount}/${threshold} (Fanpage: "${pageName}")`);
+          console.log(`[Warmup Tracker] Video Ads không tích xanh trượt tiêu chí: ${consecutiveUnmatchedVideoCount} (Ngưỡng: sau ${threshold} bài trượt -> Tương tác bài thứ ${threshold + 1}) | Fanpage: "${pageName}"`);
 
-          // Đạt đủ ngưỡng (mặc định 10 bài) -> Kích hoạt chu kỳ Warmup trên bài video ad không tích xanh này
-          if (settings.warmupEnabled !== false && consecutiveUnmatchedVideoCount >= threshold) {
+          // ĐÚNG BÀI THỨ 11 (sau 10 bài video ads không tích xanh trượt): Kích hoạt chu kỳ Warmup
+          if (settings.warmupEnabled !== false && consecutiveUnmatchedVideoCount > threshold) {
             isWarmup = true;
-            console.log(`[Warmup Tracker] Đã tích lũy đủ ${consecutiveUnmatchedVideoCount} bài video ads không tích xanh. Kích hoạt Warmup Cycle trên bài thứ ${consecutiveUnmatchedVideoCount}...`);
-            consecutiveUnmatchedVideoCount = 0;
+            console.log(`[Warmup Tracker] 🔥 ĐÃ TÍCH LŨY ĐỦ ${threshold} BÀI TRƯỢT LIÊN TIẾP! Kích hoạt Warmup Cycle trên bài thứ ${consecutiveUnmatchedVideoCount} (Fanpage: "${pageName}")...`);
+            consecutiveUnmatchedVideoCount = 0; // Reset lại bộ đếm sau khi đã kích hoạt
             chrome.runtime.sendMessage({
               action: 'RUN_WARMUP_FLOW',
               payload: {
@@ -266,7 +266,7 @@
     if (isWarmup) {
       auditChecks.unshift({
         pass: true,
-        desc: `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 10 trượt: Thả Reaction & Xem ${settings.warmupWatchSeconds || 15}s)`
+        desc: `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 11 sau 10 bài video ads không tích xanh trượt: Thả Reaction & Xem ${settings.warmupWatchSeconds || 15}s)`
       });
     }
 
@@ -687,18 +687,6 @@
       }
     }
 
-    // 3. Nếu chưa thấy, quét theo các dòng text của card
-    if (!buttonText) {
-      const textLines = text.split('\n').map(l => cleanCtaText(l)).filter(Boolean);
-      for (const line of textLines) {
-        const m = line.match(CTA_MATCH_PATTERN);
-        if (m) {
-          buttonText = formatCta(m[1]);
-          break;
-        }
-      }
-    }
-
     // 6. Nội dung & Headline
     const contentText = text.substring(0, 300);
     const headline = domain ? text.split(domain.toUpperCase())[1]?.split('\n')[0]?.trim() || '' : '';
@@ -739,19 +727,28 @@
 
     const regEntry = registerFeedStoryNode(node);
 
+    // LOẠI TRỪ 100%: Bài viết trong Group (Nhóm) hoặc cá nhân không phải Fanpage Ads
+    const isGroupPost = Boolean(
+      node.comet_sections?.header?.story?.group ||
+      node.group ||
+      (regEntry?.pageUrl && regEntry.pageUrl.includes('/groups/')) ||
+      (regEntry?.storyUrl && regEntry.storyUrl.includes('/groups/'))
+    );
+    if (isGroupPost) return;
+
     const header = node.comet_sections?.header?.story;
     const content = node.comet_sections?.content?.story;
     const feedback = node.comet_sections?.feedback?.story?.feedback;
     const attachment = content?.attachments?.[0]?.styles?.attachment || (Array.isArray(node.attachments) ? node.attachments[0] : null);
 
+    // TIÊU CHUẨN XÁC ĐỊNH BÀI ADS TRONG GRAPHQL:
+    // Phải có sponsored_data thật của Facebook hoặc cờ th_dat_spo / sposnsor_new_distac_action
     const sponsoredData = header?.sponsored_data || node.sponsored_data;
     const isSponsored = Boolean(
-      sponsoredData?.is_sponsored ||
+      sponsoredData?.is_sponsored === true ||
+      (sponsoredData && sponsoredData.ad_id) ||
       node.th_dat_spo ||
-      node.__streamMeta?.isAdAction ||
-      attachment?.call_to_action ||
-      node.click_tracking_linkshim_cb ||
-      node.whatsapp_ad_context
+      node.__streamMeta?.isAdAction
     );
     if (!isSponsored) return;
 

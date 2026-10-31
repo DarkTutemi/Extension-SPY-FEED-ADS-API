@@ -44,7 +44,7 @@
           if (parsed.data.cursor) currentCursor = parsed.data.cursor;
           const streamNode = parsed.data.node;
           streamNode.__streamMeta = {
-            isAdAction: Boolean(parsed.data.sposnsor_new_distac_action || parsed.data.is_ad_eligible_for_ad_pod),
+            isAdAction: Boolean(parsed.data.sposnsor_new_distac_action),
             cursor: currentCursor
           };
           window.postMessage({
