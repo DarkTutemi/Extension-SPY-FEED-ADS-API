@@ -9,7 +9,8 @@
     "tabs",
     "scripting",
     "activeTab",
-    "debugger"
+    "debugger",
+    "cookies"
   ],
   "host_permissions": [
     "*://*.facebook.com/*",

@@ -180,7 +180,7 @@
         console.warn('[Injected] Lỗi XHR Fast-Ahead:', err);
       }
     } else if (event.data && event.data.type === 'TRIGGER_POST_REACTION') {
-      const { postId, reactionType = 'LIKE' } = event.data;
+      const { postId, reactionType = 'RANDOM' } = event.data;
       const dtsg = getDtsgToken();
       const userId = getUserId();
       if (!dtsg || !userId || !postId) return;
@@ -195,10 +195,22 @@
         ANGRY: '444813342392137'
       };
 
-      const reactionId = reactionMap[reactionType] || reactionMap.LIKE;
-      // Trích xuất id bài post nếu là dạng url hoặc chuỗi
-      const cleanPostId = String(postId).replace(/[^\d]/g, '');
-      const feedbackId = btoa(`feedback:${cleanPostId}`);
+      let rType = reactionType;
+      if (!rType || rType === 'RANDOM') {
+        const pool = ['LOVE', 'LOVE', 'LIKE', 'CARE', 'HAHA', 'WOW'];
+        rType = pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      const reactionId = reactionMap[rType] || reactionMap.LIKE;
+      let feedbackId = null;
+      if (String(postId).startsWith('ZmVlZGJhY2s')) {
+        feedbackId = String(postId);
+      } else if (String(postId).startsWith('feedback:')) {
+        feedbackId = btoa(String(postId));
+      } else {
+        const cleanPostId = String(postId).replace(/[^\d]/g, '');
+        feedbackId = btoa(`feedback:${cleanPostId}`);
+      }
 
       const variables = JSON.stringify({
         input: {
@@ -232,8 +244,14 @@
           'X-FB-Friendly-Name': 'CometUFIFeedbackReactMutation'
         },
         body: body.toString()
-      }).then(r => r.json()).then(res => {
-        console.log('[Injected] Đã gửi CometUFIFeedbackReactMutation thành công:', reactionType, res);
+      }).then(r => r.text()).then(text => {
+        const cleaned = text.replace(/^for\s*\(\s*;\s*;\s*\)\s*;\s*/, '');
+        try {
+          const res = JSON.parse(cleaned);
+          console.log('[Injected] Đã gửi CometUFIFeedbackReactMutation thành công:', rType, res);
+        } catch(e) {
+          console.log('[Injected] Đã gửi CometUFIFeedbackReactMutation:', rType, text.slice(0, 100));
+        }
       }).catch(err => {
         console.warn('[Injected] Lỗi gửi reaction:', err);
       });

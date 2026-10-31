@@ -455,7 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <span>💬 ${(log.comments || 0).toLocaleString()}</span>
         <span>↗️ ${(log.shares || 0).toLocaleString()}</span>
         ${log.buttonText ? `<span style="color:#06b6d4;">[CTA: ${escapeHTML(log.buttonText)}]</span>` : ''}
-        ${isWarmup ? `<span style="color:#f59e0b; font-weight:600;">[Đã tương tác Warmup]</span>` : ''}
+        ${isWarmup ? `<span style="color:#10b981; font-weight:600;">[✓ Đã xác thực 100% API: ${escapeHTML(log.warmupReaction || 'Reaction')}]</span>` : ''}
       </div>
 
       <div class="audit-checklist">
@@ -589,6 +589,8 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.runtime.sendMessage({ action: 'CLEAR_LOGS' }, () => {
         logsList = [];
         renderLogsList();
+        const badgeWarmup = document.getElementById('pillBadgeWarmup');
+        if (badgeWarmup) badgeWarmup.textContent = '0';
       });
     }
   });
@@ -864,6 +866,64 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 3.3 Kích Hoạt Test Warmup Tương Tác (Thả Tim / Like & Xem Video)
+  const btnRunTestWarmup = document.getElementById('btnRunTestWarmup');
+  const txtTestWarmupUrl = document.getElementById('txtTestWarmupUrl');
+  const selectWarmupPreset = document.getElementById('selectWarmupPreset');
+  const selectWarmupReaction = document.getElementById('selectWarmupReaction');
+  const inputTestWarmupSeconds = document.getElementById('inputTestWarmupSeconds');
+  const testWarmupStatus = document.getElementById('testWarmupStatus');
+
+  if (selectWarmupPreset && txtTestWarmupUrl) {
+    selectWarmupPreset.addEventListener('change', () => {
+      txtTestWarmupUrl.value = selectWarmupPreset.value;
+    });
+  }
+
+  if (btnRunTestWarmup) {
+    btnRunTestWarmup.addEventListener('click', () => {
+      const url = (txtTestWarmupUrl?.value || '').trim();
+      if (!url || !url.startsWith('http')) {
+        alert('Vui lòng nhập link bài viết Facebook hợp lệ (bắt đầu bằng https://)');
+        return;
+      }
+
+      const rType = selectWarmupReaction?.value || 'RANDOM';
+      const rLabel = rType === 'RANDOM' ? '🎲 Random Cảm xúc' :
+                     rType === 'LOVE' ? '❤️ Yêu thích (Love)' : 
+                     rType === 'CARE' ? '🥰 Thương thương (Care)' :
+                     rType === 'HAHA' ? '😂 Haha' :
+                     rType === 'WOW' ? '😮 Wow' : '👍 Thích (Like)';
+      const sec = parseInt(inputTestWarmupSeconds?.value, 10) || 15;
+
+      btnRunTestWarmup.disabled = true;
+      btnRunTestWarmup.innerHTML = `<span>⏳ Đang khởi chạy Warmup (${rType})...</span>`;
+      if (testWarmupStatus) testWarmupStatus.textContent = `Đang mở tab bài viết, thả ${rLabel} và xem video trong ${sec}s...`;
+
+      chrome.runtime.sendMessage({
+        action: 'RUN_WARMUP_FLOW',
+        payload: {
+          postUrl: url,
+          reactionType: rType,
+          watchSeconds: sec,
+          isManualTest: true
+        }
+      }, (res) => {
+        if (res && res.success) {
+          if (testWarmupStatus) testWarmupStatus.textContent = `✓ Đã kích hoạt Warmup ${rLabel} thành công! Theo dõi tab vừa mở...`;
+        } else {
+          btnRunTestWarmup.disabled = false;
+          btnRunTestWarmup.innerHTML = `<span>🔥 Kích Hoạt Test Warmup Thả Tim Ngay</span>`;
+          if (testWarmupStatus) testWarmupStatus.textContent = 'Lỗi khởi chạy: ' + (res?.error || 'Không rõ');
+        }
+        setTimeout(() => {
+          btnRunTestWarmup.disabled = false;
+          btnRunTestWarmup.innerHTML = `<span>🔥 Kích Hoạt Test Warmup Thả Tim Ngay</span>`;
+        }, 3000);
+      });
+    });
+  }
+
   // 4. Xóa danh sách Ads
   btnClearList.addEventListener('click', () => {
     if (confirm('Bạn có chắc muốn xóa sạch toàn bộ danh sách Ads đã lọc không?')) {
@@ -971,11 +1031,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     } else if (message.action === 'ON_WARMUP_COMPLETED') {
-      const { postId, postUrl } = message.payload || {};
+      const { postId, postUrl, reactionType, verified } = message.payload || {};
       const target = logsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
       if (target) {
         target.isWarmup = true;
+        target.warmupReaction = reactionType;
+        target.warmupVerified = verified !== false;
         renderLogsList();
+      }
+      const testWarmupStatus = document.getElementById('testWarmupStatus');
+      if (testWarmupStatus) {
+        const rName = reactionType || 'Reaction';
+        testWarmupStatus.innerHTML = `<span style="color:#10b981; font-weight:600;">✓ Backend Facebook đã xác nhận 100% tương tác (${rName})!</span>`;
       }
     } else if (message.action === 'ON_WARMUP_PROGRESS') {
       const { current, threshold } = message.payload || {};

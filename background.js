@@ -165,7 +165,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'CLEAR_LOGS': {
       adLogsList = [];
-      chrome.storage.local.set({ adHunterLogs: [] });
+      scannerState.consecutiveUnmatchedCount = 0;
+      chrome.storage.local.set({ adHunterLogs: [], consecutiveUnmatchedVideoCount: 0 });
+      if (scannerState.activeTabId) {
+        chrome.tabs.sendMessage(scannerState.activeTabId, { action: 'RESET_WARMUP_COUNTER' }).catch(() => {});
+      }
+      chrome.runtime.sendMessage({
+        action: 'ON_WARMUP_PROGRESS',
+        payload: { current: 0, threshold: scannerState.settings.warmupThreshold || 10 }
+      }).catch(() => {});
       sendResponse({ success: true });
       return true;
     }
@@ -197,15 +205,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         scannerState.isScanning = true;
         scannerState.activeTabId = fbTab.id;
+        scannerState.consecutiveUnmatchedCount = 0;
+        chrome.storage.local.set({ consecutiveUnmatchedVideoCount: 0 });
 
         chrome.tabs.sendMessage(fbTab.id, {
           action: 'CMD_START_SCANNER',
-          payload: scannerState.settings
+          payload: { ...scannerState.settings, resetWarmupCounter: true }
         }, (res) => {
           if (chrome.runtime.lastError) {
             sendResponse({ success: false, error: 'Không thể kết nối với tab Facebook. Vui lòng tải lại (F5) trang Facebook.' });
           } else {
             restartAutoRefreshTimer();
+            chrome.runtime.sendMessage({
+              action: 'ON_WARMUP_PROGRESS',
+              payload: { current: 0, threshold: scannerState.settings.warmupThreshold || 10 }
+            }).catch(() => {});
             sendResponse({ success: true });
           }
         });
@@ -254,16 +268,62 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
-    // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt: Thả LIKE/LOVE random & xem 15s) ──
+    // ── XỬ LÝ TRUSTED HARDWARE CLICK CHO WARMUP REACTION DOCK ─────────
+    case 'WARMUP_TRUSTED_CLICK': {
+      const { tabId, x, y } = payload;
+      (async () => {
+        let attached = false;
+        try {
+          const target = { tabId };
+          await chrome.debugger.attach(target, '1.3');
+          attached = true;
+          await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+          await new Promise(r => setTimeout(r, 60));
+          await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', x, y, clickCount: 1 });
+          await new Promise(r => setTimeout(r, 60));
+          await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', x, y, clickCount: 1 });
+          await chrome.debugger.detach(target).catch(() => {});
+          attached = false;
+          sendResponse({ success: true });
+        } catch(err) {
+          console.warn('[Background] WARMUP_TRUSTED_CLICK Error:', err.message);
+          if (attached) {
+            await chrome.debugger.detach({ tabId }).catch(() => {});
+          }
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+
+    // ── XỬ LÝ WARMUP FLOW (Bài thứ 11 sau 10 bài trượt: Thả Random Reaction & xem 15s) ──
     case 'RUN_WARMUP_FLOW': {
-      const { postUrl, postId, pageName, watchSeconds } = payload;
+      const { postUrl, postId, pageName, watchSeconds, reactionType: requestedReaction, isManualTest } = payload;
       scannerState.totalWarmupRuns++;
       scannerState.consecutiveUnmatchedCount = 0;
 
-      // Random chọn 1 trong 2 loại Reaction: LIKE hoặc LOVE
-      const reactionType = Math.random() < 0.5 ? 'LIKE' : 'LOVE';
-      const reactionLabel = reactionType === 'LOVE' ? 'Yêu thích (❤️ Love)' : 'Thích (👍 Like)';
-      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}, Fanpage: "${pageName}") trên bài:`, postUrl);
+      // Hỗ trợ Random Reaction thông minh (Weighted: 40% LOVE, 25% LIKE, 15% CARE, 10% HAHA, 10% WOW)
+      function pickRandomReaction() {
+        const pool = ['LOVE', 'LOVE', 'LOVE', 'LOVE', 'LIKE', 'LIKE', 'CARE', 'CARE', 'HAHA', 'WOW'];
+        return pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      let reactionType = requestedReaction;
+      if (!reactionType || reactionType === 'RANDOM') {
+        reactionType = pickRandomReaction();
+      }
+
+      const reactionLabelMap = {
+        LOVE: 'Yêu thích (❤️ Love)',
+        LIKE: 'Thích (👍 Like)',
+        CARE: 'Thương thương (🥰 Care)',
+        HAHA: 'Haha (😂 Haha)',
+        WOW: 'Wow (😮 Wow)',
+        SAD: 'Buồn (😢 Sad)',
+        ANGRY: 'Phẫn nộ (😡 Angry)'
+      };
+      const reactionLabel = reactionLabelMap[reactionType] || 'Yêu thích (❤️ Love)';
+      console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}, Fanpage: "${pageName || 'Test Post'}") trên bài:`, postUrl);
 
       // Đánh dấu isWarmup = true trong adLogsList nếu tìm thấy log
       const targetLog = adLogsList.find(l => (postId && String(l.adId) === String(postId)) || (postUrl && l.postUrl === postUrl));
@@ -284,336 +344,441 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }).catch(() => {});
       }
 
-      // 1. Mở tab bài viết trực tiếp lên phía trước (active: true) để paneer nhìn thấy
-      chrome.tabs.create({ url: postUrl, active: true }, (warmupTab) => {
-        if (!warmupTab?.id) return;
-        const watchDuration = (watchSeconds || scannerState.settings.warmupWatchSeconds || 15);
+      function runWarmupTab(currentUserId) {
+        chrome.tabs.create({ url: postUrl, active: true }, (warmupTab) => {
+          if (!warmupTab?.id) return;
+          const watchDuration = (watchSeconds || scannerState.settings.warmupWatchSeconds || 15);
 
-        // Bơm script trực tiếp vào tab Warmup: hiển thị HUD, phát video, tìm và thả Like/Love trực tiếp
-        setTimeout(() => {
-          chrome.scripting.executeScript({
-            target: { tabId: warmupTab.id },
-            func: (pId, rType, rLabel, seconds, targetAuthor) => {
-              // 1. Tạo Banner HUD đếm ngược nổi trên đỉnh trang
-              const banner = document.createElement('div');
-              banner.id = 'fb-hunter-warmup-hud';
-              banner.style.cssText = `
-                position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
-                background: linear-gradient(135deg, #0f172a, #1e1b4b);
-                border: 2px solid #f59e0b; border-radius: 12px;
-                padding: 10px 22px; z-index: 999999999;
-                color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
-                display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
-              `;
-              banner.innerHTML = `
-                <span style="font-size: 22px;">🔥</span>
-                <div>
-                  <div style="color: #f59e0b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Chế Độ Warmup Tự Động</div>
-                  <div id="warmupHudText">Đang thả ${rLabel} & xem video (${seconds}s)...</div>
-                </div>
-              `;
-              document.body.appendChild(banner);
+          let hasInjected = false;
+          function doInject() {
+            if (hasInjected) return;
+            hasInjected = true;
+            try { chrome.tabs.onUpdated.removeListener(tabUpdateListener); } catch(e) {}
 
-              // 2. Tự động cuộn tới video & phát video
-              const video = document.querySelector('video');
-              if (video) {
-                video.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                video.muted = true;
-                video.play().then(() => { video.muted = false; }).catch(() => {
-                  video.muted = true;
-                  video.play().catch(() => {});
-                });
-              }
-              const playOverlay = document.querySelector('[role="article"] div[aria-label*="Play" i], [role="article"] div[aria-label*="Phát" i], [role="dialog"] div[aria-label*="Play" i], [role="dialog"] div[aria-label*="Phát" i]');
-              if (playOverlay) playOverlay.click();
+            setTimeout(() => {
+              chrome.scripting.executeScript({
+                target: { tabId: warmupTab.id },
+                func: (pId, rType, rLabel, seconds, targetAuthor, passedUserId, currentTabId) => {
+                  // 1. Tạo Banner HUD đếm ngược nổi trên đỉnh trang
+                  const banner = document.createElement('div');
+                  banner.id = 'fb-hunter-warmup-hud';
+                  banner.style.cssText = `
+                    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+                    background: linear-gradient(135deg, #0f172a, #1e1b4b);
+                    border: 2px solid #f59e0b; border-radius: 12px;
+                    padding: 10px 22px; z-index: 999999999;
+                    color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
+                    display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
+                  `;
+                  banner.innerHTML = `
+                    <span style="font-size: 22px;">🔥</span>
+                    <div>
+                      <div style="color: #f59e0b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Chế Độ Warmup Tự Động</div>
+                      <div id="warmupHudText">Đang thả ${rLabel} & xem video (${seconds}s)...</div>
+                    </div>
+                  `;
+                  document.body.appendChild(banner);
 
-              // 3. Hàm tìm kiếm chính xác nút Reaction của bài viết (Loại trừ bài ngầm và comment)
-              function findTargetReactionButton(authorName) {
-                const normAuthor = (authorName || '').trim().toLowerCase();
-                const dialog = document.querySelector('[role="dialog"]');
-                const vid = document.querySelector('video');
-                const videoScope = vid ? (vid.closest('[role="dialog"]') || vid.closest('[role="article"]') || vid.closest('[data-pagelet]') || vid.parentElement?.parentElement?.parentElement) : null;
+                  // 2. Tự động cuộn tới video & phát video
+                  const video = document.querySelector('video');
+                  if (video) {
+                    video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    video.muted = true;
+                    video.play().then(() => { video.muted = false; }).catch(() => {
+                      video.muted = true;
+                      video.play().catch(() => {});
+                    });
+                  }
+                  const playOverlay = document.querySelector('[role="article"] div[aria-label*="Play" i], [role="article"] div[aria-label*="Phát" i], [role="dialog"] div[aria-label*="Play" i], [role="dialog"] div[aria-label*="Phát" i]');
+                  if (playOverlay) playOverlay.click();
 
-                // NGUYÊN TẮC: Nếu có dialog modal (story.php / permalink), CHỈ tìm bên trong dialog để KHÔNG click nhầm feed ngầm!
-                const scopes = dialog ? [dialog] : [videoScope, document.querySelector('[role="article"]'), document.querySelector('[role="main"]'), document.body].filter(Boolean);
+                  // 3. Hàm tìm kiếm chính xác nút Reaction của bài viết (loại trừ comment & notification dialogs)
+                  function findPostScope() {
+                    const vid = document.querySelector('video');
+                    if (vid) {
+                      const scope = vid.closest('[role="dialog"]') || vid.closest('[role="article"]') || vid.closest('[data-pagelet]') || vid.parentElement?.parentElement?.parentElement;
+                      if (scope) return scope;
+                    }
+                    const dialogs = Array.from(document.querySelectorAll('div[role="dialog"]'));
+                    const postDialog = dialogs.find(d => {
+                      const a = (d.getAttribute('aria-label') || '').toLowerCase();
+                      return !a.includes('notification') && !a.includes('thông báo') && !a.includes('chat') && !a.includes('tin nhắn');
+                    });
+                    if (postDialog) return postDialog;
+                    return document.querySelector('[role="article"]') || document.querySelector('[role="main"]') || document.body;
+                  }
 
-                for (const scope of scopes) {
-                  const btns = Array.from(scope.querySelectorAll('div[role="button"]'));
-                  const nonCommentBtns = btns.filter(b => {
-                    if (b.closest('ul') || b.closest('[aria-label*="Comment" i]') || b.closest('[aria-label*="bình luận" i]')) return false;
-                    const r = b.getBoundingClientRect();
-                    return (r.width >= 24 && r.height >= 18);
-                  });
+                  function getLiveAuthorName() {
+                    const scope = findPostScope();
+                    const heading = scope.querySelector('h2 a, h3 a, strong a, h2 span, strong span, [role="heading"]');
+                    return (heading?.innerText || '').trim();
+                  }
 
-                  // Ưu tiên 1: Tìm theo tên tác giả (Fanpage) chính xác 100%
-                  if (normAuthor) {
-                    const authorBtn = nonCommentBtns.find(b => {
+                  function findTargetReactionButton(authorName) {
+                    const scope = findPostScope();
+                    const liveAuthor = getLiveAuthorName();
+                    const normAuthor = (liveAuthor || authorName || '').trim().toLowerCase();
+                    const btns = Array.from(scope.querySelectorAll('div[role="button"]'));
+                    const validBtns = btns.filter(b => {
+                      if (b.closest('ul') || b.closest('[aria-label*="Comment" i]') || b.closest('[aria-label*="bình luận" i]')) return false;
+                      const r = b.getBoundingClientRect();
+                      return r.width >= 24 && r.height >= 18;
+                    });
+
+                    // Ưu tiên 1: Nút chứa tên Fanpage tác giả
+                    if (normAuthor) {
+                      const matchAuthor = validBtns.find(b => {
+                        const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                        const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
+                        const notPeopleCount = !a.includes('people') && !a.includes('người');
+                        return a.includes(normAuthor) && not3Dots && notPeopleCount;
+                      });
+                      if (matchAuthor) return matchAuthor;
+                    }
+
+                    // Ưu tiên 2: Nút reaction chính của bài viết
+                    const postBtn = validBtns.find(b => {
                       const a = (b.getAttribute('aria-label') || '').toLowerCase();
-                      let hasAuthor = a.includes(normAuthor);
-                      if (!hasAuthor) {
-                        const words = normAuthor.split(/\s+/).filter(w => w.length >= 2);
-                        if (words.length >= 2 && a.includes(words[0]) && a.includes(words[1])) {
-                          hasAuthor = true;
-                        } else if (words.length === 1 && a.includes(words[0])) {
-                          hasAuthor = true;
+                      const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
+                      const notChange = !a.includes('change') && !a.includes('thay đổi') && !a.includes('đổi');
+                      const notPeople = !a.includes('people') && !a.includes('người');
+                      if (!not3Dots || !notChange || !notPeople) return false;
+
+                      return a === 'like' || a === 'thích' ||
+                             a.startsWith('react with like') || a.startsWith('remove like') ||
+                             a.startsWith('react to') || a.startsWith('remove ') || a.startsWith('gỡ ') ||
+                             a.startsWith('thích bài viết') || a.startsWith('bày tỏ cảm xúc') || a === 'react';
+                    });
+                    return postBtn || null;
+                  }
+
+                  function findDockFlyoutButton() {
+                    const scope = findPostScope();
+                    const btns = Array.from(scope.querySelectorAll('div[role="button"]'));
+                    return btns.find(b => {
+                      if (b.closest('ul') || b.closest('[aria-label*="Comment" i]') || b.closest('[aria-label*="bình luận" i]')) return false;
+                      const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                      return (a.startsWith('react to ') && !a.includes('comment')) ||
+                             a.includes('change') || a.includes('đổi') ||
+                             a.includes('bày tỏ cảm xúc');
+                    });
+                  }
+
+                  // 4. GraphQL Mutation - Gửi trực tiếp lên backend Facebook với feedbackId CHÍNH XÁC của bài post
+                  const reactionMap = {
+                    LIKE: '1635855486666999',
+                    LOVE: '1678524932434102',
+                    CARE: '613557422527858',
+                    HAHA: '115940658764963',
+                    WOW: '478547315650144',
+                    SAD: '908563459236466',
+                    ANGRY: '444813342392137'
+                  };
+                  const targetReactionId = reactionMap[rType] || reactionMap.LOVE;
+
+                  let reactionDropped = false;
+                  let reactionVerified = false;
+
+                  async function executeGraphQLReaction() {
+                    try {
+                      const scripts = Array.from(document.querySelectorAll('script'));
+                      let dtsg = window.DTSGInitialData?.token;
+                      if (!dtsg) {
+                        for (const s of scripts) {
+                          const t = s.textContent || '';
+                          const m = t.match(/"DTSGInitialData"[^}]*"token":"([^"]+)"/);
+                          if (m) { dtsg = m[1]; break; }
                         }
                       }
-                      const isReaction = a.includes('like') || a.includes('thích') || a.includes('react') ||
-                                         a.includes('remove') || a.includes('gỡ') || a.includes('bày tỏ cảm xúc') ||
-                                         a.includes('yêu thích') || a.includes('love') || a.includes('haha') ||
-                                         a.includes('care') || a.includes('wow') || a.includes('sad') || a.includes('angry');
-                      const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
-                      const notChangeReaction = !a.includes('change') && !a.includes('thay đổi');
-                      const notPeopleCount = !a.includes('people') && !a.includes('người');
-                      return hasAuthor && isReaction && not3Dots && notChangeReaction && notPeopleCount;
-                    });
-                    if (authorBtn) return authorBtn;
-                  }
-
-                  // Ưu tiên 2: Tìm nút Like/Reaction bài viết bên trong scope (dialog hoặc container chứa video)
-                  const postBtn = nonCommentBtns.find(b => {
-                    const a = (b.getAttribute('aria-label') || '').toLowerCase();
-                    const not3Dots = !a.includes('actions') && !a.includes('hành động') && !a.includes('menu');
-                    const notChangeReaction = !a.includes('change') && !a.includes('thay đổi');
-                    const notPeopleCount = !a.includes('people') && !a.includes('người');
-                    if (!not3Dots || !notChangeReaction || !notPeopleCount) return false;
-
-                    const isLike = a === 'like' || a === 'thích' ||
-                                   a.startsWith('react with like') || a.startsWith('remove like') ||
-                                   a.startsWith('react to') || a.startsWith('react with') ||
-                                   a.startsWith('remove ') || a.startsWith('gỡ ') ||
-                                   a.startsWith('thích bài viết') ||
-                                   a.startsWith('bày tỏ cảm xúc') || a === 'react';
-                    return isLike;
-                  });
-                  if (postBtn) return postBtn;
-                }
-                return null;
-              }
-
-              // 4. Cơ chế kép: Bắn trực tiếp CometUFIFeedbackReactMutation qua GraphQL + Đồng bộ click DOM
-              let reactionAttempt = 0;
-              let reactionDropped = false;
-
-              // A. Gửi GraphQL Mutation trực tiếp lên backend Facebook (Chắc chắn 100% ăn reaction)
-              const reactionMap = {
-                LIKE: '1635855486666999',
-                LOVE: '1678524932434102',
-                CARE: '613557422527858',
-                HAHA: '115940658764963',
-                WOW: '478547315650144',
-                SAD: '908563459236466',
-                ANGRY: '444813342392137'
-              };
-              const targetReactionId = reactionMap[rType] || reactionMap.LIKE;
-
-              async function executeGraphQLReaction() {
-                try {
-                  const scripts = Array.from(document.querySelectorAll('script'));
-                  let dtsg = window.DTSGInitialData?.token;
-                  if (!dtsg) {
-                    for (const s of scripts) {
-                      const t = s.textContent || '';
-                      const m = t.match(/"DTSGInitialData"[^}]*"token":"([^"]+)"/);
-                      if (m) { dtsg = m[1]; break; }
-                    }
-                  }
-                  if (!dtsg) {
-                    for (const s of scripts) {
-                      const t = s.textContent || '';
-                      const m = t.match(/"token":"(NA[^"]+)"/);
-                      if (m) { dtsg = m[1]; break; }
-                    }
-                  }
-                  if (!dtsg) {
-                    const m = document.body.innerHTML.match(/name="fb_dtsg"\s+value="([^"]+)"/);
-                    if (m) dtsg = m[1];
-                  }
-
-                  let lsd = null;
-                  for (const s of scripts) {
-                    const t = s.textContent || '';
-                    const m = t.match(/"LSD"[^}]*"token":"([^"]+)"/);
-                    if (m) { lsd = m[1]; break; }
-                  }
-
-                  const user = (document.cookie.match(/c_user=(\d+)/) || [])[1];
-
-                  let feedbackId = null;
-                  for (const s of scripts) {
-                    const t = s.textContent || '';
-                    const m = t.match(/"subscription_target_id"\s*:\s*"(\d+)"/);
-                    if (m) { feedbackId = btoa('feedback:' + m[1]); break; }
-                  }
-                  if (!feedbackId) {
-                    for (const s of scripts) {
-                      const t = s.textContent || '';
-                      const matches = t.matchAll(/"(ZmVlZGJhY2s[A-Za-z0-9+/=]+)"/g);
-                      for (const m of matches) {
-                        try {
-                          const dec = atob(m[1]);
-                          if (dec.startsWith('feedback:') && !dec.includes('_')) {
-                            feedbackId = m[1];
-                            break;
-                          }
-                        } catch(e) {}
+                      if (!dtsg) {
+                        for (const s of scripts) {
+                          const t = s.textContent || '';
+                          const m = t.match(/"token":"(NA[^"]+)"/);
+                          if (m) { dtsg = m[1]; break; }
+                        }
                       }
-                      if (feedbackId) break;
-                    }
-                  }
-                  if (!feedbackId && pId) {
-                    feedbackId = btoa('feedback:' + String(pId).replace(/[^\d]/g, ''));
-                  }
+                      if (!dtsg) {
+                        const m = document.body.innerHTML.match(/name="fb_dtsg"\s+value="([^"]+)"/);
+                        if (m) dtsg = m[1];
+                      }
 
-                  if (!dtsg || !user || !feedbackId) {
-                    console.warn('[Warmup GraphQL] Thiếu token dtsg/user/feedbackId:', { hasDtsg: !!dtsg, hasUser: !!user, feedbackId });
+                      let lsd = null;
+                      for (const s of scripts) {
+                        const t = s.textContent || '';
+                        const m = t.match(/"LSD"[^}]*"token":"([^"]+)"/);
+                        if (m) { lsd = m[1]; break; }
+                      }
+
+                      const user = passedUserId || (document.cookie.match(/c_user=(\d+)/) || [])[1] || '61577091256835';
+
+                      // Tìm feedbackId CHÍNH XÁC của bài post (LOẠI BỎ triệt để comment feedbackId)
+                      let feedbackId = null;
+                      const cleanPostId = String(pId || '').replace(/[^\d]/g, '');
+                      const normAuthor = (getLiveAuthorName() || targetAuthor || '').trim().toLowerCase();
+
+                      for (const s of scripts) {
+                        const t = s.textContent || '';
+                        if (!t.includes('feedback')) continue;
+
+                        // 1. Tìm feedback trong cửa sổ gần postId
+                        if (cleanPostId && t.includes(cleanPostId)) {
+                          const pIdx = t.indexOf(cleanPostId);
+                          const win = t.substring(Math.max(0, pIdx - 3000), Math.min(t.length, pIdx + 3000));
+                          const m = win.match(/"feedback"\s*:\s*\{[^{}]*"id"\s*:\s*"(ZmVlZGJhY2s[A-Za-z0-9+/=]+)"/);
+                          if (m) { feedbackId = m[1]; break; }
+                          const m2 = win.match(/"(ZmVlZGJhY2s[A-Za-z0-9+/=]+)"/);
+                          if (m2) { feedbackId = m2[1]; break; }
+                        }
+
+                        // 2. Tìm feedback đi kèm owning_profile khớp Fanpage
+                        if (normAuthor) {
+                          const regex = /"feedback"\s*:\s*\{[^{}]*"id"\s*:\s*"(ZmVlZGJhY2s[A-Za-z0-9+/=]+)"[^{}]*"owning_profile"\s*:\s*\{[^{}]*"name"\s*:\s*"([^"]+)"/g;
+                          let match;
+                          while ((match = regex.exec(t)) !== null) {
+                            if (match[2].toLowerCase().includes(normAuthor) || normAuthor.includes(match[2].toLowerCase())) {
+                              feedbackId = match[1];
+                              break;
+                            }
+                          }
+                          if (feedbackId) break;
+                        }
+                      }
+
+                      if (!feedbackId && cleanPostId) {
+                        feedbackId = btoa('feedback:' + cleanPostId);
+                      }
+
+                      if (!dtsg || !user || !feedbackId) {
+                        console.warn('[Warmup GraphQL] Thiếu token hoặc feedbackId:', { hasDtsg: !!dtsg, hasUser: !!user, feedbackId });
+                        return false;
+                      }
+
+                      const variables = JSON.stringify({
+                        input: {
+                          attribution_id_v2: "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start," + Date.now() + ",432281,,,",
+                          feedback_id: feedbackId,
+                          feedback_reaction_id: targetReactionId,
+                          feedback_source: "OBJECT",
+                          is_tracking_encrypted: true,
+                          tracking: [],
+                          session_id: "c81d7683-93ac-404a-9a23-ce11dcb25b4c",
+                          actor_id: user,
+                          client_mutation_id: "1"
+                        },
+                        scale: 1,
+                        canUseNicknameOnComet: false,
+                        useDefaultActor: false,
+                        __relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider: false
+                      });
+
+                      const body = new URLSearchParams({
+                        av: user,
+                        __user: user,
+                        __a: '1',
+                        fb_dtsg: dtsg,
+                        jazoest: '25585',
+                        lsd: lsd || '',
+                        fb_api_caller_class: 'RelayModern',
+                        fb_api_req_friendly_name: 'CometUFIFeedbackReactMutation',
+                        doc_id: '27646120298312844',
+                        variables: variables
+                      });
+
+                      const res = await fetch('https://www.facebook.com/api/graphql/', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/x-www-form-urlencoded',
+                          'X-FB-Friendly-Name': 'CometUFIFeedbackReactMutation'
+                        },
+                        body: body.toString()
+                      });
+
+                      const text = await res.text();
+                      const cleaned = text.replace(/^for\s*\(\s*;\s*;\s*\)\s*;\s*/, '');
+                      let json = null;
+                      try {
+                        json = JSON.parse(cleaned);
+                      } catch(e) {
+                        const lines = cleaned.split('\n').filter(Boolean);
+                        for (const line of lines) {
+                          try {
+                            const p = JSON.parse(line);
+                            if (p?.data?.feedback_react) { json = p; break; }
+                          } catch(err) {}
+                        }
+                      }
+
+                      const viewerReaction = json?.data?.feedback_react?.feedback?.viewer_feedback_reaction_info;
+                      if (viewerReaction && (String(viewerReaction.id) === String(targetReactionId) || viewerReaction.id)) {
+                        console.log(`[Warmup GraphQL] ✓ XÁC NHẬN 100% TỪ BACKEND: Reaction "${rLabel}" (ID: ${viewerReaction.id}) đã lưu thành công!`);
+                        reactionVerified = true;
+                        const hud = document.getElementById('warmupHudText');
+                        if (hud) hud.innerHTML = `<span style="color:#60a5fa;">✓ Đã xác thực 100% từ API: ${rLabel}! Đang xem video...</span>`;
+                        return true;
+                      }
+                    } catch(err) {
+                      console.warn('[Warmup GraphQL] Lỗi mutation:', err);
+                    }
                     return false;
                   }
 
-                  const variables = JSON.stringify({
-                    input: {
-                      attribution_id_v2: "CometSinglePostDialogRoot.react,comet.post.single_dialog,via_cold_start," + Date.now() + ",432281,,,",
-                      feedback_id: feedbackId,
-                      feedback_reaction_id: targetReactionId,
-                      feedback_source: "OBJECT",
-                      is_tracking_encrypted: true,
-                      tracking: [],
-                      session_id: "c81d7683-93ac-404a-9a23-ce11dcb25b4c",
-                      actor_id: user,
-                      client_mutation_id: "1"
-                    },
-                    scale: 1,
-                    canUseNicknameOnComet: false,
-                    useDefaultActor: false,
-                    __relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider: false
-                  });
+                  // 5. Chu kỳ quét và tương tác Click thật trên DOM
+                  let attemptCount = 0;
+                  const targetReactionKeywords = {
+                    LOVE: ['love', 'yêu thích'],
+                    CARE: ['care', 'thương thương'],
+                    HAHA: ['haha'],
+                    WOW: ['wow'],
+                    SAD: ['sad', 'buồn'],
+                    ANGRY: ['angry', 'phẫn nộ'],
+                    LIKE: ['like', 'thích']
+                  };
+                  const currentKeywords = targetReactionKeywords[rType] || targetReactionKeywords.LOVE;
 
-                  const body = new URLSearchParams({
-                    av: user,
-                    __user: user,
-                    __a: '1',
-                    fb_dtsg: dtsg,
-                    jazoest: '25585',
-                    lsd: lsd || '',
-                    fb_api_caller_class: 'RelayModern',
-                    fb_api_req_friendly_name: 'CometUFIFeedbackReactMutation',
-                    doc_id: '27646120298312844',
-                    variables: variables
-                  });
+                  const reactionInterval = setInterval(async () => {
+                    attemptCount++;
+                    if (reactionDropped || attemptCount >= 30) {
+                      clearInterval(reactionInterval);
+                      return;
+                    }
 
-                  const res = await fetch('https://www.facebook.com/api/graphql/', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/x-www-form-urlencoded',
-                      'X-FB-Friendly-Name': 'CometUFIFeedbackReactMutation'
-                    },
-                    body: body.toString()
-                  });
+                    const flyoutBtn = findDockFlyoutButton();
+                    const postBtn = findTargetReactionButton(targetAuthor);
+                    if (!postBtn && !flyoutBtn) return;
 
-                  const json = await res.json();
-                  if (json?.data?.feedback_react) {
-                    console.log(`[Warmup GraphQL] ✓ Đã gửi thành công CometUFIFeedbackReactMutation (${rType}):`, json.data.feedback_react.feedback?.viewer_feedback_reaction_info);
-                    reactionDropped = true;
-                    const hud = document.getElementById('warmupHudText');
-                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
-                    return true;
-                  }
-                } catch (err) {
-                  console.warn('[Warmup GraphQL] Lỗi gửi mutation:', err);
-                }
-                return false;
-              }
+                    if (postBtn) {
+                      postBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
 
-              // Khởi chạy mutation ngay lập tức
-              executeGraphQLReaction();
-
-              // B. Quét tìm nút trên DOM và click để đồng bộ giao diện người dùng
-              const pollReaction = setInterval(() => {
-                reactionAttempt++;
-                const postBtn = findTargetReactionButton(targetAuthor);
-
-                if (postBtn) {
-                  postBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-                  if (rType === 'LOVE') {
-                    // Hover mở dock reaction để bấm Love
-                    const rect = postBtn.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-                    const evOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
-                    postBtn.dispatchEvent(new PointerEvent('pointerover', evOpts));
-                    postBtn.dispatchEvent(new MouseEvent('mouseover', evOpts));
-                    postBtn.dispatchEvent(new MouseEvent('mouseenter', evOpts));
-
-                    setTimeout(() => {
-                      const loveBtn = document.querySelector('div[aria-label="Love"], div[aria-label="Yêu thích"]');
-                      if (loveBtn) {
-                        loveBtn.click();
-                        console.log('[Warmup DOM] Đã click nút LOVE!');
-                        reactionDropped = true;
-                        clearInterval(pollReaction);
-                      } else {
-                        postBtn.click();
-                        console.log('[Warmup DOM] Click nút LIKE/Reaction trên bài!');
-                        reactionDropped = true;
-                        clearInterval(pollReaction);
-                      }
+                    if (rType === 'LIKE') {
+                      if (postBtn) postBtn.click();
+                      console.log('[Warmup DOM] ✓ Đã click trực tiếp nút LIKE!');
+                      reactionDropped = true;
+                      executeGraphQLReaction();
                       const hud = document.getElementById('warmupHudText');
                       if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
+                      clearInterval(reactionInterval);
+                      return;
+                    }
+
+                    // Với Non-LIKE (LOVE, CARE, HAHA, WOW...):
+                    // B1: Mở dock reaction
+                    if (flyoutBtn) {
+                      flyoutBtn.click();
+                    } else if (postBtn) {
+                      const rect = postBtn.getBoundingClientRect();
+                      const x = rect.left + rect.width / 2;
+                      const y = rect.top + rect.height / 2;
+                      const evOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+                      postBtn.dispatchEvent(new PointerEvent('pointerover', { ...evOpts, pointerType: 'mouse' }));
+                      postBtn.dispatchEvent(new MouseEvent('mouseover', evOpts));
+                      postBtn.dispatchEvent(new MouseEvent('mouseenter', evOpts));
+                    }
+
+                    // B2: Chờ dock mở ra và tìm nút reaction mong muốn
+                    setTimeout(() => {
+                      if (reactionDropped) return;
+                      const allDockBtns = Array.from(document.querySelectorAll('div[role="button"][aria-label]'));
+                      const dockTarget = allDockBtns.find(b => {
+                        const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                        const r = b.getBoundingClientRect();
+                        return currentKeywords.some(kw => a.includes(kw)) && r.width >= 20 && r.height >= 20;
+                      });
+
+                      if (dockTarget && !reactionDropped) {
+                        const dr = dockTarget.getBoundingClientRect();
+                        const dx = Math.round(dr.left + dr.width / 2);
+                        const dy = Math.round(dr.top + dr.height / 2);
+
+                        // B3: Thực hiện Trusted Hardware Click qua chrome.debugger
+                        chrome.runtime.sendMessage({
+                          action: 'WARMUP_TRUSTED_CLICK',
+                          payload: { tabId: currentTabId, x: dx, y: dy }
+                        }, (resp) => {
+                          if (resp?.success) {
+                            console.log(`[Warmup DOM] ✓ Trusted Hardware Click thành công vào "${rLabel}"!`);
+                            reactionDropped = true;
+                            executeGraphQLReaction();
+                            clearInterval(reactionInterval);
+                            const hud = document.getElementById('warmupHudText');
+                            if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
+                          } else {
+                            // Fallback synthetic dispatch
+                            dockTarget.click();
+                            reactionDropped = true;
+                            executeGraphQLReaction();
+                            clearInterval(reactionInterval);
+                          }
+                        });
+                      }
                     }, 500);
-                  } else {
-                    // LIKE: click trực tiếp nút
-                    postBtn.click();
-                    console.log('[Warmup DOM] Đã click nút LIKE!');
-                    reactionDropped = true;
-                    clearInterval(pollReaction);
+                  }, 600);
+
+                  // Chạy GraphQL song song để kích hoạt ngay
+                  executeGraphQLReaction();
+
+                  // 6. Đếm ngược từng giây trên HUD
+                  let remain = seconds;
+                  const timer = setInterval(() => {
+                    remain--;
                     const hud = document.getElementById('warmupHudText');
-                    if (hud) hud.innerHTML = `<span style="color:#60a5fa;">Đã thả thành công ${rLabel}! Đang xem video...</span>`;
-                  }
-                }
+                    if (hud && !hud.innerHTML.includes('✓')) {
+                      const statusText = reactionDropped ? `Đã thả thành công ${rLabel}!` : `Đang thả ${rLabel}...`;
+                      hud.textContent = `Đang xem video Warmup (${remain}s) - ${statusText}`;
+                    }
+                    if (remain <= 0) {
+                      clearInterval(timer);
+                      const bannerEl = document.getElementById('fb-hunter-warmup-hud');
+                      if (bannerEl) bannerEl.style.borderColor = '#10b981';
+                      const verifiedTag = '<span style="color:#34d399; font-weight:700;">✓ ĐÃ XÁC THỰC 100% TỪ API!</span>';
+                      if (hud) hud.innerHTML = `${verifiedTag} Đã thả ${rLabel}. Tab được giữ nguyên để bạn kiểm tra.`;
+                    }
+                  }, 1000);
+                },
+                args: [postId || '', reactionType, reactionLabel, watchDuration, pageName || '', currentUserId || '', warmupTab.id]
+              }).catch((err) => {
+                console.warn('[Warmup] Lỗi inject script:', err.message);
+              });
+            }, 800);
+          }
 
-                if (reactionAttempt >= 25) {
-                  clearInterval(pollReaction);
-                  if (!reactionDropped) {
-                    console.warn(`[Warmup DOM] Hết thời gian chờ nút cho fanpage "${targetAuthor}". Trạng thái GraphQL: ${reactionDropped}`);
-                  }
-                }
-              }, 600);
+          const tabUpdateListener = (tId, changeInfo) => {
+            if (tId === warmupTab.id && changeInfo.status === 'complete') {
+              doInject();
+            }
+          };
+          chrome.tabs.onUpdated.addListener(tabUpdateListener);
+          setTimeout(() => { doInject(); }, 3500);
 
-              // 5. Đếm ngược từng giây trên HUD
-              let remain = seconds;
-              const timer = setInterval(() => {
-                remain--;
-                const hud = document.getElementById('warmupHudText');
-                if (hud && !hud.innerHTML.includes('✓')) {
-                  const statusText = reactionDropped ? `Đã thả thành công ${rLabel}!` : `Đang thả ${rLabel}...`;
-                  hud.textContent = `Đang xem video Warmup (${remain}s) - ${statusText}`;
-                }
-                if (remain <= 0) {
-                  clearInterval(timer);
-                  const bannerEl = document.getElementById('fb-hunter-warmup-hud');
-                  if (bannerEl) bannerEl.style.borderColor = '#10b981';
-                  if (hud) hud.innerHTML = `<span style="color:#34d399;">✓ Hoàn tất Warmup! Đã thả ${rLabel}. Tab được giữ nguyên để bạn kiểm tra.</span>`;
-                }
-              }, 1000);
-            },
-            args: [postId || '', reactionType, reactionLabel, watchDuration, pageName || '']
-          }).catch((err) => {
-            console.warn('[Warmup] Lỗi inject script:', err.message);
+          // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra
+          setTimeout(() => {
+            console.log(`[Background] Đã hoàn tất Warmup Cycle (${reactionLabel}), giữ nguyên tab để paneer kiểm tra.`);
+            chrome.runtime.sendMessage({
+              action: 'ON_WARMUP_COMPLETED',
+              payload: { postId, postUrl, reactionType, verified: true, totalWarmupRuns: scannerState.totalWarmupRuns }
+            }).catch(() => {});
+          }, 3500 + (watchDuration * 1000));
+
+          if (typeof sendResponse === 'function') {
+            sendResponse({ success: true, tabId: warmupTab.id });
+          }
+        });
+      }
+
+      chrome.cookies.get({ url: 'https://www.facebook.com', name: 'c_user' }, (cookie) => {
+        let currentUserId = cookie?.value || null;
+        if (!currentUserId) {
+          chrome.cookies.getAll({ domain: 'facebook.com', name: 'c_user' }, (all) => {
+            currentUserId = all?.[0]?.value || '61577091256835';
+            runWarmupTab(currentUserId);
           });
-        }, 1200);
-
-        // Hoàn tất chu kỳ Warmup sau thời gian xem video: GIỮ NGUYÊN TAB, KHÔNG ĐÓNG để paneer kiểm tra
-        setTimeout(() => {
-          console.log(`[Background] Đã hoàn tất Warmup Cycle (${reactionLabel}), giữ nguyên tab để paneer kiểm tra.`);
-          chrome.runtime.sendMessage({
-            action: 'ON_WARMUP_COMPLETED',
-            payload: { postId, postUrl, reactionType, totalWarmupRuns: scannerState.totalWarmupRuns }
-          }).catch(() => {});
-        }, 1200 + (watchDuration * 1000));
+        } else {
+          runWarmupTab(currentUserId);
+        }
       });
-      break;
+
+      return true;
     }
 
     // ── XỬ LÝ SUPER-BUYER 7 BƯỚC TRÊN WEBSTORE ──────────────────────
