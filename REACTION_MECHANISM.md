@@ -177,6 +177,7 @@ Facebook Comet phân bổ mã ID riêng biệt cho từng loại cảm xúc:
 | **CARE** | Thương thương (🥰) | `'613557422527858'` | **15%** |
 | **HAHA** | Haha (😆) | `'115940658764963'` | **10%** |
 | **WOW** | Wow (😮) | `'478547315650144'` | **10%** |
+| **NONE** | Chỉ xem video (Không Reaction) | `null` | Tùy chọn cấu hình Warmup |
 | **SAD** | Buồn (😢) | `'908563459236466'` | Tùy chọn thủ công |
 | **ANGRY**| Phẫn nộ (😡) | `'444813342392137'` | Tùy chọn thủ công |
 | **UNLIKE**| Gỡ cảm xúc | `'0'` | Reset |
@@ -295,6 +296,14 @@ async function executeGraphQLReaction(feedbackId, reactionId, tokens) {
   return json?.data?.feedback_react?.feedback;
 }
 ```
+
+### 4.5. Chế Độ Warmup Reaction Trong Cài Đặt (Reaction Selection & Watch Only)
+
+Trong mục **Cài đặt tiêu chí lọc**, người dùng có thể linh hoạt chọn hành vi tương tác khi kích hoạt chu kỳ Warmup:
+
+1. **`RANDOM` (🎲 Random Cảm xúc):** Hệ thống tự động phân bổ ngẫu nhiên dựa trên phân phối trọng số tự nhiên (40% Love, 25% Like, 15% Care, 10% Haha, 10% Wow). Vừa bảo đảm tài khoản tương tác đa dạng, vừa xóa bỏ hoàn toàn dấu vết hành vi lặp khuôn (bot footprint).
+2. **`NONE` (👁️ Chỉ xem Video, Không thả Reaction):** Dành riêng cho các kịch bản nuôi tài khoản cần độ tự nhiên cao chỉ lướt xem nội dung video. Hệ thống sẽ cuộn đến video, bật video, đếm ngược đủ thời gian xem (mặc định 15 giây) và **hoàn toàn không kích hoạt GraphQL hay click nút cảm xúc**, sau đó kết thúc chu kỳ thành công.
+3. **Reaction Cố Định (`LOVE`, `LIKE`, `CARE`, `HAHA`, `WOW`):** Dành cho mục đích test A/B hoặc các kịch bản định hướng tài khoản chỉ bày tỏ một loại cảm xúc duy nhất.
 
 ---
 

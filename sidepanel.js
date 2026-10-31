@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectWarmupEnabled = document.getElementById('selectWarmupEnabled');
   const inputWarmupThreshold = document.getElementById('inputWarmupThreshold');
   const inputWarmupWatchSeconds = document.getElementById('inputWarmupWatchSeconds');
+  const selectWarmupReactionMode = document.getElementById('selectWarmupReactionMode');
 
   // AI Vision & Captcha Controls
   const aiSettingsToggle = document.getElementById('aiSettingsToggle');
@@ -95,6 +96,9 @@ document.addEventListener('DOMContentLoaded', () => {
           if (inputWarmupWatchSeconds) {
             inputWarmupWatchSeconds.value = state.settings.warmupWatchSeconds || 15;
           }
+          if (selectWarmupReactionMode && state.settings.warmupReaction) {
+            selectWarmupReactionMode.value = state.settings.warmupReaction;
+          }
           if (txtGeminiPool && Array.isArray(state.settings.geminiKeys) && state.settings.geminiKeys.length > 0) {
             txtGeminiPool.value = state.settings.geminiKeys.join('\n');
           }
@@ -113,11 +117,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Tải danh sách ads đã lưu và trạng thái tự cuộn
-    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey'], (res) => {
+    chrome.storage.local.get(['matchedAdsList', 'adHunterLogs', 'isAutoScrollEnabled', 'geminiKeys', 'deepseekKey', 'twoCaptchaKey', 'warmupReaction'], (res) => {
       adsList = res.matchedAdsList || [];
       logsList = res.adHunterLogs || [];
       if (res.isAutoScrollEnabled !== undefined) {
         isAutoScrollEnabled = Boolean(res.isAutoScrollEnabled);
+      }
+      if (selectWarmupReactionMode && res.warmupReaction) {
+        selectWarmupReactionMode.value = res.warmupReaction;
       }
       if (txtGeminiPool && Array.isArray(res.geminiKeys) && res.geminiKeys.length > 0) {
         txtGeminiPool.value = res.geminiKeys.join('\n');
@@ -792,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const warmupEnabled = selectWarmupEnabled ? (selectWarmupEnabled.value === 'true') : true;
     const warmupThreshold = inputWarmupThreshold ? parseInt(inputWarmupThreshold.value, 10) || 10 : 10;
     const warmupWatchSeconds = inputWarmupWatchSeconds ? parseInt(inputWarmupWatchSeconds.value, 10) || 15 : 15;
+    const warmupReaction = selectWarmupReactionMode ? selectWarmupReactionMode.value : 'RANDOM';
 
     const newSettings = {
       minLikes,
@@ -799,10 +807,12 @@ document.addEventListener('DOMContentLoaded', () => {
       autoRefreshMinutes,
       warmupEnabled,
       warmupThreshold,
-      warmupWatchSeconds
+      warmupWatchSeconds,
+      warmupReaction
     };
 
     chrome.runtime.sendMessage({ action: 'UPDATE_SETTINGS', payload: newSettings }, () => {
+      chrome.storage.local.set({ warmupReaction });
       btnSaveSettings.textContent = '✓ Đã lưu cài đặt';
       setTimeout(() => { btnSaveSettings.textContent = 'Lưu cài đặt'; }, 1500);
     });
@@ -889,7 +899,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const rType = selectWarmupReaction?.value || 'RANDOM';
-      const rLabel = rType === 'RANDOM' ? '🎲 Random Cảm xúc' :
+      const rLabel = rType === 'NONE' ? '👁️ Chỉ xem video (Không thả Reaction)' :
+                     rType === 'RANDOM' ? '🎲 Random Cảm xúc' :
                      rType === 'LOVE' ? '❤️ Yêu thích (Love)' : 
                      rType === 'CARE' ? '🥰 Thương thương (Care)' :
                      rType === 'HAHA' ? '😂 Haha' :
@@ -897,8 +908,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const sec = parseInt(inputTestWarmupSeconds?.value, 10) || 15;
 
       btnRunTestWarmup.disabled = true;
-      btnRunTestWarmup.innerHTML = `<span>⏳ Đang khởi chạy Warmup (${rType})...</span>`;
-      if (testWarmupStatus) testWarmupStatus.textContent = `Đang mở tab bài viết, thả ${rLabel} và xem video trong ${sec}s...`;
+      btnRunTestWarmup.innerHTML = rType === 'NONE'
+        ? `<span>⏳ Đang xem Video Warmup (${sec}s)...</span>`
+        : `<span>⏳ Đang khởi chạy Warmup (${rType})...</span>`;
+      if (testWarmupStatus) {
+        testWarmupStatus.textContent = rType === 'NONE'
+          ? `Đang mở tab bài viết và xem video trong ${sec}s (Không thả Reaction)...`
+          : `Đang mở tab bài viết, thả ${rLabel} và xem video trong ${sec}s...`;
+      }
 
       chrome.runtime.sendMessage({
         action: 'RUN_WARMUP_FLOW',
@@ -910,7 +927,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }, (res) => {
         if (res && res.success) {
-          if (testWarmupStatus) testWarmupStatus.textContent = `✓ Đã kích hoạt Warmup ${rLabel} thành công! Theo dõi tab vừa mở...`;
+          if (testWarmupStatus) {
+            testWarmupStatus.textContent = rType === 'NONE'
+              ? `✓ Đã kích hoạt Warmup chỉ xem video thành công! Theo dõi tab vừa mở...`
+              : `✓ Đã kích hoạt Warmup ${rLabel} thành công! Theo dõi tab vừa mở...`;
+          }
         } else {
           btnRunTestWarmup.disabled = false;
           btnRunTestWarmup.innerHTML = `<span>🔥 Kích Hoạt Test Warmup Thả Tim Ngay</span>`;

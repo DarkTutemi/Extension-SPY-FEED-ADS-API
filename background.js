@@ -23,6 +23,7 @@ let scannerState = {
     warmupEnabled: true,
     warmupThreshold: 10,
     warmupWatchSeconds: 15,
+    warmupReaction: 'RANDOM',
     geminiKeys: [],
     deepseekKey: '',
     twoCaptchaKey: ''
@@ -308,12 +309,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return pool[Math.floor(Math.random() * pool.length)];
       }
 
-      let reactionType = requestedReaction;
-      if (!reactionType || reactionType === 'RANDOM') {
+      let reactionType = requestedReaction || scannerState.settings.warmupReaction || 'RANDOM';
+      if (reactionType === 'RANDOM') {
         reactionType = pickRandomReaction();
       }
 
       const reactionLabelMap = {
+        NONE: 'Chỉ xem video (Không thả Reaction)',
         LOVE: 'Yêu thích (❤️ Love)',
         LIKE: 'Thích (👍 Like)',
         CARE: 'Thương thương (🥰 Care)',
@@ -322,7 +324,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         SAD: 'Buồn (😢 Sad)',
         ANGRY: 'Phẫn nộ (😡 Angry)'
       };
-      const reactionLabel = reactionLabelMap[reactionType] || 'Yêu thích (❤️ Love)';
+      const reactionLabel = reactionLabelMap[reactionType] || (reactionType === 'NONE' ? 'Chỉ xem video (Không thả Reaction)' : 'Yêu thích (❤️ Love)');
       console.log(`[Background] Đang khởi chạy Warmup Cycle #${scannerState.totalWarmupRuns} (Reaction: ${reactionType}, Fanpage: "${pageName || 'Test Post'}") trên bài:`, postUrl);
 
       // Đánh dấu isWarmup = true trong adLogsList nếu tìm thấy log
@@ -333,8 +335,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chrome.storage.local.set({ adHunterLogs: adLogsList });
       }
 
-      // Thả Reaction trực tiếp qua GraphQL ở tab Newsfeed gốc (nơi injected.js đã sẵn sàng)
-      if (postId && scannerState.activeTabId) {
+      // Thả Reaction trực tiếp qua GraphQL ở tab Newsfeed gốc (nơi injected.js đã sẵn sàng) - chỉ khi KHÔNG PHẢI 'NONE'
+      if (reactionType !== 'NONE' && postId && scannerState.activeTabId) {
         chrome.scripting.executeScript({
           target: { tabId: scannerState.activeTabId },
           func: (pId, rType) => {
@@ -371,11 +373,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7), 0 0 16px rgba(245, 158, 11, 0.4);
                     display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 600;
                   `;
+                  const initialStatus = rType === 'NONE'
+                    ? `Đang xem video Warmup (${seconds}s)... (Không thả Reaction)`
+                    : `Đang thả ${rLabel} & xem video (${seconds}s)...`;
                   banner.innerHTML = `
-                    <span style="font-size: 22px;">🔥</span>
+                    <span style="font-size: 22px;">${rType === 'NONE' ? '👁️' : '🔥'}</span>
                     <div>
                       <div style="color: #f59e0b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Chế Độ Warmup Tự Động</div>
-                      <div id="warmupHudText">Đang thả ${rLabel} & xem video (${seconds}s)...</div>
+                      <div id="warmupHudText">${initialStatus}</div>
                     </div>
                   `;
                   document.body.appendChild(banner);
@@ -465,20 +470,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     });
                   }
 
-                  // 4. GraphQL Mutation - Gửi trực tiếp lên backend Facebook với feedbackId CHÍNH XÁC của bài post
-                  const reactionMap = {
-                    LIKE: '1635855486666999',
-                    LOVE: '1678524932434102',
-                    CARE: '613557422527858',
-                    HAHA: '115940658764963',
-                    WOW: '478547315650144',
-                    SAD: '908563459236466',
-                    ANGRY: '444813342392137'
-                  };
-                  const targetReactionId = reactionMap[rType] || reactionMap.LOVE;
-
                   let reactionDropped = false;
                   let reactionVerified = false;
+
+                  if (rType !== 'NONE') {
+                    // 4. GraphQL Mutation - Gửi trực tiếp lên backend Facebook với feedbackId CHÍNH XÁC của bài post
+                    const reactionMap = {
+                      LIKE: '1635855486666999',
+                      LOVE: '1678524932434102',
+                      CARE: '613557422527858',
+                      HAHA: '115940658764963',
+                      WOW: '478547315650144',
+                      SAD: '908563459236466',
+                      ANGRY: '444813342392137'
+                    };
+                    const targetReactionId = reactionMap[rType] || reactionMap.LOVE;
 
                   async function executeGraphQLReaction() {
                     try {
@@ -717,6 +723,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                   // Chạy GraphQL song song để kích hoạt ngay
                   executeGraphQLReaction();
+                }
 
                   // 6. Đếm ngược từng giây trên HUD
                   let remain = seconds;
@@ -724,15 +731,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     remain--;
                     const hud = document.getElementById('warmupHudText');
                     if (hud && !hud.innerHTML.includes('✓')) {
-                      const statusText = reactionDropped ? `Đã thả thành công ${rLabel}!` : `Đang thả ${rLabel}...`;
-                      hud.textContent = `Đang xem video Warmup (${remain}s) - ${statusText}`;
+                      if (rType === 'NONE') {
+                        hud.textContent = `Đang xem video Warmup (${remain}s)... (Không thả Reaction)`;
+                      } else {
+                        const statusText = reactionDropped ? `Đã thả thành công ${rLabel}!` : `Đang thả ${rLabel}...`;
+                        hud.textContent = `Đang xem video Warmup (${remain}s) - ${statusText}`;
+                      }
                     }
                     if (remain <= 0) {
                       clearInterval(timer);
                       const bannerEl = document.getElementById('fb-hunter-warmup-hud');
                       if (bannerEl) bannerEl.style.borderColor = '#10b981';
-                      const verifiedTag = '<span style="color:#34d399; font-weight:700;">✓ ĐÃ XÁC THỰC 100% TỪ API!</span>';
-                      if (hud) hud.innerHTML = `${verifiedTag} Đã thả ${rLabel}. Tab được giữ nguyên để bạn kiểm tra.`;
+                      if (rType === 'NONE') {
+                        if (hud) hud.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ HOÀN TẤT WARMUP!</span> Đã xem video (${seconds}s). Tab được giữ nguyên để bạn kiểm tra.`;
+                      } else {
+                        const verifiedTag = '<span style="color:#34d399; font-weight:700;">✓ ĐÃ XÁC THỰC 100% TỪ API!</span>';
+                        if (hud) hud.innerHTML = `${verifiedTag} Đã thả ${rLabel}. Tab được giữ nguyên để bạn kiểm tra.`;
+                      }
                     }
                   }, 1000);
                 },

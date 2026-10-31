@@ -32,7 +32,8 @@
     autoScroll: true,
     warmupEnabled: true,
     warmupThreshold: 10,
-    warmupWatchSeconds: 15
+    warmupWatchSeconds: 15,
+    warmupReaction: 'RANDOM'
   };
 
   let consecutiveUnmatchedVideoCount = 0;
@@ -278,7 +279,8 @@
                 postUrl: postUrl || location.href,
                 postId: adId,
                 pageName,
-                watchSeconds: settings.warmupWatchSeconds || 15
+                watchSeconds: settings.warmupWatchSeconds || 15,
+                reactionType: settings.warmupReaction || 'RANDOM'
               }
             }).catch(() => {});
           }
@@ -295,9 +297,12 @@
     }
 
     if (isWarmup) {
+      const warmupDesc = (settings.warmupReaction === 'NONE')
+        ? `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 11 sau 10 bài video ads không tích xanh trượt: Chỉ xem video ${settings.warmupWatchSeconds || 15}s, không thả Reaction)`
+        : `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 11 sau 10 bài video ads không tích xanh trượt: Thả Reaction & Xem ${settings.warmupWatchSeconds || 15}s)`;
       auditChecks.unshift({
         pass: true,
-        desc: `🔥 ĐÃ THỰC HIỆN WARMUP (Tương tác bài thứ 11 sau 10 bài video ads không tích xanh trượt: Thả Reaction & Xem ${settings.warmupWatchSeconds || 15}s)`
+        desc: warmupDesc
       });
     }
 
