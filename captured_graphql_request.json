@@ -1,0 +1,76 @@
+{
+  "timestamp": 1793701651.2418814,
+  "url": "https://www.facebook.com/api/graphql/",
+  "method": "POST",
+  "headers": {
+    "sec-ch-ua-full-version-list": "\"Chromium\";v=\"154.0.8037.98\", \"Google Chrome\";v=\"154.0.8037.98\", \"Not A(Brand\";v=\"99.0.0.0\"",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "referer": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&is_targeted_country=false&media_type=all&q=DallasWind%20US&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions&source=page-transparency-widget",
+    "sec-ch-ua": "\"Chromium\";v=\"154\", \"Google Chrome\";v=\"154\", \"Not A(Brand\";v=\"99\"",
+    "x-fb-friendly-name": "AdLibraryMobileFocusedStateProviderRefetchQuery",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-model": "\"\"",
+    "x-asbd-id": "359341",
+    "x-fb-lsd": "zMQPD_V3CzegIXui0bL1wT",
+    "sec-ch-prefers-color-scheme": "light",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36",
+    "content-type": "application/x-www-form-urlencoded",
+    "sec-ch-ua-platform-version": "\"19.0.0\""
+  },
+  "friendly_name": "AdLibraryMobileFocusedStateProviderRefetchQuery",
+  "doc_id": "26617181747964058",
+  "fb_dtsg": "NAfxH7_gB5dzNq4hCYZU00n8t5kbjVdWxAmJPF8YGzWK3N09hDPFMaA:27:1793681067",
+  "__user": "61577091256835",
+  "__rev": "1052846864",
+  "lsd": "zMQPD_V3CzegIXui0bL1wT",
+  "jazoest": "25286",
+  "variables": {
+    "activeStatus": "ACTIVE",
+    "adType": "ALL",
+    "audienceTimeframe": "LAST_7_DAYS",
+    "bylines": [],
+    "collationToken": "352e0732-5959-4970-bb1a-48bb2b170bd5",
+    "contentLanguages": [
+      "en"
+    ],
+    "countries": [
+      "US"
+    ],
+    "country": "US",
+    "deeplinkAdID": null,
+    "excludedIDs": [],
+    "fetchPageInfo": false,
+    "fetchSharedDisclaimers": false,
+    "hasDeeplinkAdID": false,
+    "isAboutTab": false,
+    "isAudienceTab": false,
+    "isLandingPage": false,
+    "isTargetedCountry": false,
+    "location": null,
+    "mediaType": "ALL",
+    "multiCountryFilterMode": null,
+    "pageIDs": [],
+    "potentialReachInput": [],
+    "publisherPlatforms": [
+      "FACEBOOK",
+      "INSTAGRAM",
+      "AUDIENCE_NETWORK"
+    ],
+    "queryString": "DallasWind US",
+    "regions": [],
+    "searchType": "KEYWORD_UNORDERED",
+    "sessionID": "c21857c7-4e5e-4c72-91dd-a0fae28aab4e",
+    "sortData": {
+      "mode": "SORT_BY_TOTAL_IMPRESSIONS",
+      "direction": "DESCENDING"
+    },
+    "source": "PAGE_TRANSPARENCY_WIDGET",
+    "startDate": {
+      "min": "2026-11-03",
+      "max": null
+    },
+    "v": "63cade",
+    "viewAllPageID": "0"
+  },
+  "raw_post_data": "av=61577091256835&__aaid=0&__user=61577091256835&__a=1&__req=f&__hs=20760.HYP%3Acomet_plat_default_pkg.2.1...0&dpr=1&__ccg=GOOD&__rev=1052846864&__s=afs3ds%3Ajpw4td%3Ai9cfdr&__hsi=7703889793225334061&__dyn=7xe6E5q9zo5ObwKBAg5S1Dxu13wqovzEdF8aUco2qwJwCwfW7oqx609vCyU4a0qa2O1Vw8G11wBz81s8hwGwQwoEcE7O2l0Fwqo31wp8kwyxS0zE-U6-3e4UaEW0KrK2S1qw8Xxm16wa-0raazo11E2XU6-1FwLweq1Iwqo6i0VawIwtU26wbu0eowRwaS&__csr=gNq2TMF5YGfcyiPiOlmIAAsB8BOldJYAB9vmuiNyRdWpDgzHKqHlszGTiGQiWmhfpnFaFAtKqVp_jGCqh4amHQi442qfufKfwyyUhxbRxh3842awPxSbBwgQU8o2rwRwfKi3m2a3u0WU3fw8a0TEtwfq0HUeE2gw5TwEw5jxi0J812o3BwfW0uzg3Pw0gGo0yC0drw6Hw67wuE02q6800MX80o0w0v_p802vYw67w0aido0iDw-w&__hsdp=gbYbXkbcAsqUx5azkzSAkg5byUnyo6y66S0ua0OE07hO00H4809uo0cT81QE04ke&__hblp=0fa0aQw2HU0wSbw1y-0dCw1BK08hw1Ny1by80tew78w7ow2u808lE0NO09Uw3882wway02LC0cqw15u086w3jE09zo11o3cw2To5S0dCDw8u02k60PE0lvw7jw&__sjsp=gbYbXFgCOhNHy4kGdifqhh0kKbxu9wq8oro1UE3aw&__comet_req=94&fb_dtsg=NAfxH7_gB5dzNq4hCYZU00n8t5kbjVdWxAmJPF8YGzWK3N09hDPFMaA%3A27%3A1793681067&jazoest=25286&lsd=zMQPD_V3CzegIXui0bL1wT&__spin_r=1052846864&__spin_b=trunk&__spin_t=1793701619&__jssesw=1&fb_api_caller_class=RelayModern&fb_api_req_friendly_name=AdLibraryMobileFocusedStateProviderRefetchQuery&server_timestamps=true&variables=%7B%22activeStatus%22%3A%22ACTIVE%22%2C%22adType%22%3A%22ALL%22%2C%22audienceTimeframe%22%3A%22LAST_7_DAYS%22%2C%22bylines%22%3A%5B%5D%2C%22collationToken%22%3A%22352e0732-5959-4970-bb1a-48bb2b170bd5%22%2C%22contentLanguages%22%3A%5B%22en%22%5D%2C%22countries%22%3A%5B%22US%22%5D%2C%22country%22%3A%22US%22%2C%22deeplinkAdID%22%3Anull%2C%22excludedIDs%22%3A%5B%5D%2C%22fetchPageInfo%22%3Afalse%2C%22fetchSharedDisclaimers%22%3Afalse%2C%22hasDeeplinkAdID%22%3Afalse%2C%22isAboutTab%22%3Afalse%2C%22isAudienceTab%22%3Afalse%2C%22isLandingPage%22%3Afalse%2C%22isTargetedCountry%22%3Afalse%2C%22location%22%3Anull%2C%22mediaType%22%3A%22ALL%22%2C%22multiCountryFilterMode%22%3Anull%2C%22pageIDs%22%3A%5B%5D%2C%22potentialReachInput%22%3A%5B%5D%2C%22publisherPlatforms%22%3A%5B%22FACEBOOK%22%2C%22INSTAGRAM%22%2C%22AUDIENCE_NETWORK%22%5D%2C%22queryString%22%3A%22DallasWind%20US%22%2C%22regions%22%3A%5B%5D%2C%22searchType%22%3A%22KEYWORD_UNORDERED%22%2C%22sessionID%22%3A%22c21857c7-4e5e-4c72-91dd-a0fae28aab4e%22%2C%22sortData%22%3A%7B%22mode%22%3A%22SORT_BY_TOTAL_IMPRESSIONS%22%2C%22direction%22%3A%22DESCENDING%22%7D%2C%22source%22%3A%22PAGE_TRANSPARENCY_WIDGET%22%2C%22startDate%22%3A%7B%22min%22%3A%222026-11-03%22%2C%22max%22%3Anull%7D%2C%22v%22%3A%2263cade%22%2C%22viewAllPageID%22%3A%220%22%7D&doc_id=26617181747964058"
+}

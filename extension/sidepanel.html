@@ -7,17 +7,22 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <!-- Top-Level Navigation Switcher (2 Tab Lớn: Video Ads Hunter vs Manual) -->
+  <!-- Top-Level Navigation Switcher (3 Tab Lớn: Video Ads Hunter vs Find Ads vs Manual) -->
   <nav class="top-nav-bar">
     <button class="top-nav-btn active" data-view="view-hunter">
       <span class="nav-icon">🎯</span>
       <span>Video Ads Hunter</span>
+    </button>
+    <button class="top-nav-btn" data-view="view-find-ads" id="navBtnFindAds">
+      <span class="nav-icon">🔍</span>
+      <span>Find Ads</span>
     </button>
     <button class="top-nav-btn" data-view="view-manual">
       <span class="nav-icon">🛠️</span>
       <span>Manual</span>
     </button>
   </nav>
+
 
   <!-- TAB LỚN 1: VIDEO ADS HUNTER -->
   <div class="main-view active" id="view-hunter">
@@ -457,6 +462,270 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
       </div>
     </section>
   </div> <!-- end #view-manual -->
+
+  <!-- TAB LỚN 3: TÌM KIẾM QUẢNG CÁO FACEBOOK (FIND ADS) -->
+  <div class="main-view" id="view-find-ads" style="display: none; flex-direction: column;">
+    <!-- Header Bar -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon find-ads-brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>Facebook Ads Library</h1>
+          <div class="badge-status" id="find-ads-badge-status">
+            <span class="status-dot"></span>
+            <span class="status-text" id="find-ads-status-text">Sẵn sàng tìm kiếm</span>
+          </div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px;">
+        <button class="btn-toggle-scan btn-find-ads-search" id="btn-start-find-ads">
+          <span class="btn-icon">🚀</span>
+          <span class="btn-label">Bắt đầu tìm kiếm</span>
+        </button>
+        <button class="btn-toggle-scan btn-find-ads-stop" id="btn-stop-find-ads" style="display: none;">
+          <span class="btn-icon">⏹</span>
+          <span class="btn-label">Dừng</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Search & Basic Settings Panel -->
+    <section class="settings-panel find-ads-search-box">
+      <!-- Keyword Input Row -->
+      <div class="form-row">
+        <label for="find-ads-keyword" class="find-ads-label-row">
+          <span>Từ khóa tìm kiếm / Advertiser:</span>
+          <span class="find-ads-hint">Hỗ trợ từ khóa hoặc tên Page</span>
+        </label>
+        <div class="input-wrapper find-ads-input-wrap">
+          <input type="text" id="find-ads-keyword" class="find-ads-input" placeholder="Nhập từ khóa tìm kiếm (ví dụ: DallasWind US)..." value="DallasWind US">
+          <button type="button" id="btn-find-ads-clear-keyword" class="btn-clear-keyword" title="Xóa trắng">&times;</button>
+        </div>
+        <!-- Exact Phrase Search Option -->
+        <div class="find-ads-exact-phrase-row" style="margin-top: 6px; display: flex; align-items: center; justify-content: space-between;">
+          <label for="find-ads-exact-phrase" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="find-ads-exact-phrase" class="find-ads-checkbox" style="accent-color: #6366f1; width: 14px; height: 14px; cursor: pointer;">
+            <span>Tìm kiếm cụm từ chính xác (Exact phrase: <code>"..."</code>)</span>
+          </label>
+          <span class="status-badge" id="find-ads-search-type-badge" style="font-size: 10px; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 2px 6px; border-radius: 4px;" title="Chế độ khớp từ khóa Meta GraphQL">KEYWORD_UNORDERED</span>
+        </div>
+      </div>
+
+      <!-- Country & Category Dual Selectors Row -->
+      <div class="find-ads-dual-row">
+        <div class="form-row" style="flex: 1;">
+          <label for="find-ads-country">Quốc gia (Country):</label>
+          <select id="find-ads-country" class="code-input find-ads-select">
+            <option value="US" selected>🇺🇸 United States (Mặc định)</option>
+            <option value="ALL">🌐 Tất cả quốc gia (ALL)</option>
+            <option value="VN">🇻🇳 Việt Nam (VN)</option>
+            <option value="GB">🇬🇧 Vương Quốc Anh (GB)</option>
+            <option value="CA">🇨🇦 Canada (CA)</option>
+            <option value="AU">🇦🇺 Australia (AU)</option>
+            <option value="DE">🇩🇪 Đức (DE)</option>
+            <option value="FR">🇫🇷 Pháp (FR)</option>
+            <option value="JP">🇯🇵 Nhật Bản (JP)</option>
+            <option value="KR">🇰🇷 Hàn Quốc (KR)</option>
+            <option value="SG">🇸🇬 Singapore (SG)</option>
+            <option value="TH">🇹🇭 Thái Lan (TH)</option>
+            <option value="MY">🇲🇾 Malaysia (MY)</option>
+            <option value="PH">🇵🇭 Philippines (PH)</option>
+            <option value="IN">🇮🇳 Ấn Độ (IN)</option>
+            <option value="BR">🇧🇷 Brazil (BR)</option>
+            <option value="MX">🇲🇽 Mexico (MX)</option>
+          </select>
+        </div>
+
+        <div class="form-row" style="flex: 1;">
+          <label for="find-ads-category">Danh mục (Category):</label>
+          <select id="find-ads-category" class="code-input find-ads-select">
+            <option value="ALL" selected>Tất cả quảng cáo (All ads)</option>
+            <option value="POLITICAL_AND_ISSUE_ADS">Vấn đề Xã hội / Chính trị</option>
+            <option value="HOUSING">Nhà ở (Housing)</option>
+            <option value="EMPLOYMENT">Việc làm (Employment)</option>
+            <option value="CREDIT">Tín dụng (Credit)</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Advanced Filters Accordion -->
+    <section class="settings-panel find-ads-filter-panel">
+      <div class="settings-header" id="find-ads-filter-toggle">
+        <span class="settings-title find-ads-filter-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+          </svg>
+          <span>Bộ lọc nâng cao (Platform, Media, Status, Date, Lang, Sort)</span>
+          <span class="status-badge" id="find-ads-filter-count-badge">4 bộ lọc</span>
+        </span>
+        <span class="settings-icon-arrow" id="find-ads-filter-arrow">▼</span>
+      </div>
+
+      <div class="settings-body" id="find-ads-filter-body">
+        <!-- Platform Checkboxes -->
+        <div class="form-row">
+          <label class="find-ads-sublabel">Nền tảng hiển thị (Publisher Platforms):</label>
+          <div class="find-ads-platforms-grid">
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-fb" value="FACEBOOK" checked> Facebook
+            </label>
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-ig" value="INSTAGRAM" checked> Instagram
+            </label>
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-an" value="AUDIENCE_NETWORK" checked> Audience Net
+            </label>
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-msg" value="MESSENGER"> Messenger
+            </label>
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-wa" value="WHATSAPP"> WhatsApp
+            </label>
+            <label class="find-ads-checkbox-label">
+              <input type="checkbox" id="chk-platform-threads" value="THREADS"> Threads
+            </label>
+          </div>
+        </div>
+
+        <!-- Media Type & Active Status Dual Row -->
+        <div class="find-ads-dual-row">
+          <div class="form-row" style="flex: 1;">
+            <label for="find-ads-media-type">Định dạng Media:</label>
+            <select id="find-ads-media-type" class="code-input find-ads-select">
+              <option value="ALL" selected>Tất cả định dạng (ALL)</option>
+              <option value="VIDEO">Chỉ Video (Video HD/SD)</option>
+              <option value="IMAGE">Chỉ Hình ảnh (Images)</option>
+              <option value="MEME">Meme / Văn bản</option>
+            </select>
+          </div>
+
+          <div class="form-row" style="flex: 1;">
+            <label for="find-ads-active-status">Trạng thái Ads:</label>
+            <select id="find-ads-active-status" class="code-input find-ads-select">
+              <option value="ACTIVE" selected>Đang chạy (Active ads)</option>
+              <option value="ALL">Tất cả (Active & Inactive)</option>
+              <option value="INACTIVE">Đã dừng (Inactive ads)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Date Range & Language Dual Row -->
+        <div class="find-ads-dual-row">
+          <div class="form-row" style="flex: 1;">
+            <label for="find-ads-start-date">Từ ngày (On or after):</label>
+            <input type="date" id="find-ads-start-date" class="code-input find-ads-select" style="color: #fff;">
+          </div>
+
+          <div class="form-row" style="flex: 1;">
+            <label for="find-ads-language">Ngôn ngữ bài viết:</label>
+            <select id="find-ads-language" class="code-input find-ads-select">
+              <option value="en" selected>English (en)</option>
+              <option value="ALL">Tất cả ngôn ngữ (ALL)</option>
+              <option value="vi">Tiếng Việt (vi)</option>
+              <option value="zh">Tiếng Trung (zh)</option>
+              <option value="es">Tiếng Tây Ban Nha (es)</option>
+              <option value="fr">Tiếng Pháp (fr)</option>
+              <option value="de">Tiếng Đức (de)</option>
+              <option value="ja">Tiếng Nhật (ja)</option>
+              <option value="ko">Tiếng Hàn (ko)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Sort By Row -->
+        <div class="form-row">
+          <label for="find-ads-sort-by">Sắp xếp kết quả (Sort By):</label>
+          <select id="find-ads-sort-by" class="code-input find-ads-select">
+            <option value="TOTAL_IMPRESSIONS_DESC" selected>Lượt hiển thị cao nhất (Impressions: high to low)</option>
+            <option value="START_DATE_DESC">Ngày bắt đầu gần nhất (Most recent / Start date)</option>
+            <option value="RELEVANCY">Độ liên quan (Relevancy)</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progress Container & Pagination Stats -->
+    <section class="stats-grid find-ads-metrics">
+      <div class="stat-card">
+        <span class="stat-label">Tổng tìm thấy</span>
+        <span class="stat-val find-ads-cyan-val" id="find-ads-total-count">0</span>
+      </div>
+      <div class="stat-card highlight">
+        <span class="stat-label">Đã thu thập</span>
+        <span class="stat-val find-ads-emerald-val" id="find-ads-parsed-count">0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Đang xử lý / Batch</span>
+        <span class="stat-val find-ads-batch-val" id="find-ads-batch-progress">Sẵn sàng</span>
+      </div>
+    </section>
+
+    <!-- Progress Bar Line -->
+    <div class="find-ads-progress-bar-wrap">
+      <div id="find-ads-progress-bar" class="find-ads-progress-bar-fill"></div>
+    </div>
+
+    <!-- Action Toolbar: inote.net & Export Controls -->
+    <div class="find-ads-action-bar">
+      <!-- Format Options for inote.net / Copy -->
+      <div class="find-ads-export-format-box" style="margin-bottom: 8px; padding: 8px 10px; background: rgba(30, 41, 59, 0.6); border: 1px solid #26354d; border-radius: 6px;">
+        <div style="font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+          <span>Tùy chọn xuất inote &amp; Copy:</span>
+          <span id="badge-export-mode" style="font-size: 10px; color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); padding: 1px 6px; border-radius: 4px;">Đầy đủ 8 trường</span>
+        </div>
+        <div style="display: flex; gap: 14px; flex-wrap: wrap;">
+          <label for="chk-export-only-content" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="chk-export-only-content" class="find-ads-checkbox" style="accent-color: #6366f1; width: 14px; height: 14px; cursor: pointer;">
+            <span>Chỉ lấy nội dung bài viết</span>
+          </label>
+          <label for="chk-export-only-links" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="chk-export-only-links" class="find-ads-checkbox" style="accent-color: #6366f1; width: 14px; height: 14px; cursor: pointer;">
+            <span>Chỉ lấy đường dẫn đích (Link)</span>
+          </label>
+        </div>
+      </div>
+      <!-- Large prominent inote.net save button -->
+      <button class="btn-primary btn-save-inote" id="btn-save-inote" disabled>
+        <span style="font-size: 14px;">📝</span>
+        <span>Lưu Vào inote.net</span>
+        <span class="status-badge" id="badge-inote-ready-count">0 ads</span>
+      </button>
+
+      <!-- Quick utility action buttons row -->
+      <div class="find-ads-util-row">
+        <button class="btn-action" id="btn-copy-all-find-ads" title="Sao chép toàn bộ nội dung theo đúng mẫu cấu trúc">📋 Copy Tất Cả</button>
+        <button class="btn-action" id="btn-export-find-ads-json" title="Xuất file JSON">JSON</button>
+        <button class="btn-action" id="btn-export-find-ads-csv" title="Xuất file CSV">CSV</button>
+        <button class="btn-danger" id="btn-clear-find-ads-results" title="Xóa danh sách">🗑️ Xóa</button>
+      </div>
+
+      <!-- inote Feedback link alert banner (hidden by default) -->
+      <div id="inote-result-banner" class="inote-result-banner" style="display: none;">
+        <div class="inote-alert-left">
+          <span class="inote-alert-check">✓</span>
+          <span class="inote-alert-label">Đã lưu:</span>
+          <a href="#" target="_blank" id="inote-created-url-link" class="inote-alert-link">https://inote.net/...</a>
+        </div>
+        <button type="button" id="btn-copy-inote-link-quick" class="btn-copy-inote-quick">Copy Link</button>
+      </div>
+    </div>
+
+    <!-- Results List Container -->
+    <main class="ads-container find-ads-results-scroll" id="find-ads-results-list">
+      <!-- Empty State -->
+      <div class="empty-state" id="find-ads-empty-state">
+        <div class="empty-icon">🔍</div>
+        <h3>Chưa có kết quả tìm kiếm Ads</h3>
+        <p>Nhập từ khóa (ví dụ: <strong>DallasWind US</strong>), cấu hình bộ lọc và bấm <strong>Bắt đầu tìm kiếm</strong> để bóc tách 100% dữ liệu từ Facebook Ads Library.</p>
+      </div>
+    </main>
+  </div> <!-- end #view-find-ads -->
 
   <!-- Modal Dialog: Danh Sách Loại Trừ Warmup -->
   <div class="modal-backdrop" id="warmupExclusionModal" style="display: none;">

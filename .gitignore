@@ -6,3 +6,11 @@ config.local.js
 Thumbs.db
 scratch/
 
+# Teamwork subagent workspace
+.agents/
+__pycache__/
+*.pyc
+
+Revert-API-chatbot/
+ecc/
+agent reach/

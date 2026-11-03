@@ -1,6 +1,17 @@
 /**
- * background.js - Service Worker cho FB Video Ads Hunter Side Panel
+ * background.js - Service Worker cho FB Video Ads Hunter Side Panel & Ads Library GraphQL Engine
  */
+
+if (typeof chrome === 'undefined') {
+  global.chrome = {
+    sidePanel: { setPanelBehavior: () => Promise.resolve() },
+    storage: { local: { get: (keys, cb) => cb && cb({}), set: () => {} } },
+    runtime: { onMessage: { addListener: () => {} }, sendMessage: () => Promise.resolve(), getURL: (u) => u },
+    tabs: { query: (q, cb) => cb && cb([]), create: (opt, cb) => cb && cb({ id: 999 }), onUpdated: { addListener: () => {}, removeListener: () => {} } },
+    cookies: { get: () => Promise.resolve(null), getAll: () => Promise.resolve([]) },
+    scripting: { executeScript: () => Promise.resolve([]) }
+  };
+}
 
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
@@ -199,6 +210,676 @@ function triggerStoreFlow(targetUrl, postUrl, postId) {
     chrome.tabs.onUpdated.addListener(storeTabUpdateListener);
   });
 }
+
+// ══════════════════════════════════════════════════════════════════
+// ── ADS LIBRARY GRAPHQL SERVICE (Milestone 2: GraphQL & Cursor) ────
+// ══════════════════════════════════════════════════════════════════
+
+class AdsLibraryGraphQLService {
+  constructor() {
+    this.docId = '26617181747964058';
+    this.friendlyName = 'AdLibraryMobileFocusedStateProviderRefetchQuery';
+    this.isSearching = false;
+    this.cancelRequested = false;
+    this.cachedDtsg = null;
+    this.cachedLsd = null;
+    this.cachedRev = '1052846864';
+    this.cachedUserId = '0';
+    this.sessionID = this.generateUUID();
+    this.collationToken = this.generateUUID();
+  }
+
+  generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * 1. Token Harvesting: Trích xuất cookie Facebook, fb_dtsg, lsd và UID
+   */
+  async ensureAuthentication() {
+    try {
+      // 1.1 Lấy c_user từ cookie Facebook
+      if (typeof chrome !== 'undefined' && chrome.cookies && chrome.cookies.get) {
+        try {
+          const cookie = await chrome.cookies.get({ url: 'https://www.facebook.com', name: 'c_user' });
+          if (cookie && cookie.value) {
+            this.cachedUserId = cookie.value;
+          } else {
+            const allCookies = await chrome.cookies.getAll({ domain: '.facebook.com', name: 'c_user' });
+            if (allCookies && allCookies.length > 0 && allCookies[0].value) {
+              this.cachedUserId = allCookies[0].value;
+            }
+          }
+        } catch (e) {
+          console.warn('[AdsLibrary] Không thể đọc cookie c_user:', e);
+        }
+      }
+
+      // 1.2 Lấy token từ tab Facebook đang mở (nếu có)
+      if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query && chrome.scripting) {
+        try {
+          const tabs = await chrome.tabs.query({ url: '*://*.facebook.com/*' });
+          if (tabs && tabs.length > 0) {
+            const fbTab = tabs.find(t => t.active) || tabs[0];
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: fbTab.id },
+              world: 'MAIN',
+              func: () => ({
+                dtsg: window.DTSGInitialData?.token || null,
+                lsd: window.LSD?.token || null,
+                userId: window.CurrentUserInitialData?.USER_ID || null
+              })
+            });
+            const tokens = results?.[0]?.result;
+            if (tokens?.dtsg) this.cachedDtsg = tokens.dtsg;
+            if (tokens?.lsd) this.cachedLsd = tokens.lsd;
+            if (tokens?.userId && tokens.userId !== '0') this.cachedUserId = tokens.userId;
+          }
+        } catch (e) {
+          console.warn('[AdsLibrary] Không thể executeScript đọc tab FB:', e);
+        }
+      }
+
+      // 1.3 Nếu chưa có fb_dtsg hoặc lsd, fetch ngầm trang Ads Library để trích xuất regex
+      if (!this.cachedDtsg || !this.cachedLsd) {
+        try {
+          const resp = await fetch('https://www.facebook.com/ads/library/?country=US', {
+            credentials: 'include'
+          });
+          const html = await resp.text();
+
+          const dtsgMatch = html.match(/"DTSGInitialData",\[\],\{"token":"([^"]+)"\}/) ||
+                            html.match(/"token":"([A-Za-z0-9_-]+:27:\d+)"/) ||
+                            html.match(/name="fb_dtsg"\s+value="([^"]+)"/);
+          if (dtsgMatch) this.cachedDtsg = dtsgMatch[1];
+
+          const lsdMatch = html.match(/"LSD",\[\],\{"token":"([^"]+)"\}/) ||
+                           html.match(/name="lsd"\s+value="([^"]+)"/);
+          if (lsdMatch) this.cachedLsd = lsdMatch[1];
+
+          const revMatch = html.match(/"__spin_r":(\d+)/);
+          if (revMatch) this.cachedRev = revMatch[1];
+        } catch (e) {
+          console.warn('[AdsLibrary] Không thể fetch ngầm Ads Library để lấy token:', e);
+        }
+      }
+
+      console.log('[AdsLibrary] Xác thực hoàn tất:', {
+        userId: this.cachedUserId,
+        hasDtsg: Boolean(this.cachedDtsg),
+        hasLsd: Boolean(this.cachedLsd)
+      });
+    } catch (err) {
+      console.error('[AdsLibrary] Lỗi trích xuất token:', err);
+    }
+  }
+
+  /**
+   * 2. Build GraphQL Variables từ UI Search Parameters
+   */
+  buildVariables(params, cursor = null) {
+    let keyword = (params.keyword || '').trim();
+    let isExactPhrase = Boolean(params.isExactPhrase);
+    let searchType = params.searchType || 'KEYWORD_UNORDERED';
+
+    // Auto-detect double quotes if present in keyword (e.g. "DallasWind US")
+    const hasQuotes = /^["“'].*["”']$/.test(keyword);
+    if (hasQuotes) {
+      isExactPhrase = true;
+    }
+
+    if (isExactPhrase) {
+      searchType = 'KEYWORD_EXACT_PHRASE';
+      const unquoted = keyword.replace(/^["“']+|["”']+$/g, '').trim();
+      keyword = `"${unquoted}"`;
+    } else {
+      searchType = 'KEYWORD_UNORDERED';
+      if (hasQuotes) {
+        keyword = keyword.replace(/^["“']+|["”']+$/g, '').trim();
+      }
+    }
+    const country = (params.country || 'US').toUpperCase();
+    const mediaType = (params.mediaType || 'ALL').toUpperCase();
+    const activeStatus = (params.activeStatus || 'ACTIVE').toUpperCase();
+    const language = params.language || 'en';
+
+    // Content languages
+    let contentLanguages = ['en'];
+    if (language === 'all' || language === 'ALL') {
+      contentLanguages = [];
+    } else if (language) {
+      contentLanguages = [language];
+    }
+
+    // Publisher platforms
+    let publisherPlatforms = params.publisherPlatforms;
+    if (!Array.isArray(publisherPlatforms) || publisherPlatforms.length === 0) {
+      publisherPlatforms = ['FACEBOOK', 'INSTAGRAM', 'AUDIENCE_NETWORK'];
+    }
+
+    // Sort data
+    let sortData = {
+      mode: 'SORT_BY_TOTAL_IMPRESSIONS',
+      direction: 'DESCENDING'
+    };
+    if (params.sortMode === 'RELEVANCY' || params.sortBy === 'RELEVANCY' || params.sortMode === 'SORT_BY_RELEVANCY') {
+      sortData = {
+        mode: 'SORT_BY_RELEVANCY_MONTHLY_GROUPED',
+        direction: 'DESCENDING'
+      };
+    }
+
+    // Start Date
+    let startDateObj = null;
+    if (params.startDate) {
+      startDateObj = { min: params.startDate, max: null };
+    }
+
+    const variables = {
+      activeStatus: activeStatus,
+      adType: 'ALL',
+      audienceTimeframe: 'LAST_7_DAYS',
+      bylines: [],
+      collationToken: this.collationToken,
+      contentLanguages: contentLanguages,
+      countries: [country],
+      country: country,
+      deeplinkAdID: null,
+      excludedIDs: [],
+      fetchPageInfo: false,
+      fetchSharedDisclaimers: false,
+      hasDeeplinkAdID: false,
+      isAboutTab: false,
+      isAudienceTab: false,
+      isLandingPage: false,
+      isTargetedCountry: false,
+      location: null,
+      mediaType: mediaType,
+      multiCountryFilterMode: null,
+      pageIDs: [],
+      potentialReachInput: [],
+      publisherPlatforms: publisherPlatforms,
+      queryString: keyword,
+      regions: [],
+      searchType: searchType,
+      sessionID: this.sessionID,
+      sortData: sortData,
+      source: 'PAGE_TRANSPARENCY_WIDGET',
+      startDate: startDateObj,
+      v: '63cade',
+      viewAllPageID: '0'
+    };
+
+    if (cursor) {
+      variables.cursor = cursor;
+      variables.forward_cursor = cursor;
+    }
+
+    return variables;
+  }
+
+  /**
+   * 3. Xây dựng Form-urlencoded Body
+   */
+  buildRequestBody(variables) {
+    const params = new URLSearchParams();
+    const userId = this.cachedUserId || '0';
+
+    params.append('av', userId);
+    params.append('__user', userId);
+    params.append('__a', '1');
+    params.append('__req', 'f');
+    params.append('__hs', '20760.HYP:comet_plat_default_pkg.2.1...0');
+    params.append('dpr', '1');
+    params.append('__ccg', 'GOOD');
+    params.append('__rev', this.cachedRev || '1052846864');
+    params.append('fb_api_caller_class', 'RelayModern');
+    params.append('fb_api_req_friendly_name', this.friendlyName);
+    params.append('server_timestamps', 'true');
+    params.append('doc_id', this.docId);
+
+    if (this.cachedDtsg) params.append('fb_dtsg', this.cachedDtsg);
+    if (this.cachedLsd) params.append('lsd', this.cachedLsd);
+
+    params.append('variables', JSON.stringify(variables));
+    return params.toString();
+  }
+
+  /**
+   * 4. Relay Chunk Parser (Loại bỏ for (;;); và bóc tách search_results_connection)
+   */
+  parseRelayResponse(rawText) {
+    if (!rawText || typeof rawText !== 'string') return null;
+
+    let cleaned = rawText.trim();
+    if (cleaned.startsWith('for (;;);')) {
+      cleaned = cleaned.slice(9).trim();
+    }
+
+    const lines = cleaned.split('\n').filter(Boolean);
+    let searchConnection = null;
+
+    for (const line of lines) {
+      try {
+        const chunk = JSON.parse(line);
+        // Kiểm tra root payload
+        const rootConn = chunk?.data?.ad_library_main?.search_results_connection;
+        if (rootConn) {
+          searchConnection = rootConn;
+          break;
+        }
+        // Kiểm tra fragment deferred payload
+        const deferredConn = chunk?.data?.ad_library_main?.search_results_connection;
+        if (deferredConn) {
+          searchConnection = deferredConn;
+          break;
+        }
+      } catch (e) {
+        // Ignored invalid JSON line
+      }
+    }
+
+    return searchConnection;
+  }
+
+  /**
+   * 5. Video Duration Resolver từ param efg Base64 trong CDN URL
+   */
+  extractVideoDuration(videoUrl) {
+    if (!videoUrl || typeof videoUrl !== 'string') return null;
+    try {
+      const match = videoUrl.match(/efg=([^&]+)/);
+      if (!match) return null;
+      const b64 = decodeURIComponent(match[1]);
+      let jsonStr = '';
+      if (typeof atob === 'function') {
+        jsonStr = atob(b64);
+      } else if (typeof Buffer !== 'undefined') {
+        jsonStr = Buffer.from(b64, 'base64').toString('utf8');
+      }
+      if (!jsonStr) return null;
+      const parsed = JSON.parse(jsonStr);
+      return typeof parsed.duration_s === 'number' ? parsed.duration_s : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * 6. Trích xuất 100% Caption không bị cắt ngắn (...)
+   */
+  extractFullCaption(snapshot) {
+    if (!snapshot) return '';
+
+    // Ưu tiên 1: Lấy trực tiếp từ snapshot.body.text
+    if (snapshot.body && typeof snapshot.body.text === 'string' && snapshot.body.text.trim()) {
+      return snapshot.body.text.trim();
+    }
+
+    // Ưu tiên 2: Định dạng Carousel
+    if (Array.isArray(snapshot.cards) && snapshot.cards.length > 0) {
+      const cardTexts = snapshot.cards
+        .map((card, idx) => {
+          const text = card.body?.text || card.title || '';
+          return text ? `[Thẻ ${idx + 1}] ${text}` : '';
+        })
+        .filter(Boolean);
+      if (cardTexts.length > 0) return cardTexts.join('\n');
+    }
+
+    // Ưu tiên 3: Các đoạn văn bản phụ (extra_texts)
+    if (Array.isArray(snapshot.extra_texts) && snapshot.extra_texts.length > 0) {
+      return snapshot.extra_texts.filter(Boolean).join('\n').trim();
+    }
+
+    // Ưu tiên 4: Tiêu đề quảng cáo
+    if (snapshot.title && typeof snapshot.title === 'string') {
+      return snapshot.title.trim();
+    }
+
+    return '';
+  }
+
+  /**
+   * 7. Chuẩn hóa Ad Model thành 8 trường bắt buộc
+   */
+  normalizeAdNode(item) {
+    if (!item) return null;
+    const snap = item.snapshot || {};
+
+    // Định dạng creative & thời lượng video
+    let creativeFormat = 'Hình ảnh';
+    let durationSeconds = null;
+    let videoPreviewUrl = null;
+    let imageUrl = null;
+
+    const isVideo = snap.display_format === 'VIDEO' || (Array.isArray(snap.videos) && snap.videos.length > 0);
+    if (isVideo) {
+      const vid = snap.videos?.[0] || {};
+      const vidUrl = vid.video_hd_url || vid.video_sd_url || null;
+      videoPreviewUrl = vid.video_preview_image_url || null;
+      imageUrl = videoPreviewUrl;
+      durationSeconds = this.extractVideoDuration(vidUrl);
+      creativeFormat = durationSeconds ? `Video (${durationSeconds} giây)` : 'Video HD';
+    } else if (Array.isArray(snap.cards) && snap.cards.length > 0) {
+      creativeFormat = `Carousel (${snap.cards.length} thẻ)`;
+      imageUrl = snap.cards[0]?.image?.uri || snap.cards[0]?.video_preview_image_url || null;
+    } else if (Array.isArray(snap.images) && snap.images.length > 0) {
+      creativeFormat = 'Hình ảnh';
+      imageUrl = snap.images[0]?.resized_image_url || snap.images[0]?.original_image_url || null;
+    }
+
+    const captionText = this.extractFullCaption(snap);
+
+    // Chuẩn hóa tên các nền tảng
+    const rawPlatforms = item.publisher_platform || ['FACEBOOK'];
+    const platformNameMap = {
+      FACEBOOK: 'Facebook',
+      INSTAGRAM: 'Instagram',
+      AUDIENCE_NETWORK: 'Audience Network',
+      MESSENGER: 'Messenger',
+      WHATSAPP: 'WhatsApp',
+      THREADS: 'Threads'
+    };
+    let platformsStr = '';
+    if (Array.isArray(rawPlatforms)) {
+      platformsStr = rawPlatforms.map(p => platformNameMap[p] || p).join(', ');
+    } else {
+      platformsStr = String(rawPlatforms);
+    }
+
+    return {
+      archive_id: String(item.ad_archive_id || ''),
+      page_id: String(item.page_id || ''),
+      page_name: item.page_name || 'Fanpage',
+      is_active: Boolean(item.is_active),
+      platforms: platformsStr || 'Facebook',
+      creative_format: creativeFormat,
+      duration_seconds: durationSeconds,
+      caption_text: captionText,
+      cta_text: snap.cta_text || 'Shop now',
+      link_url: snap.link_url || '',
+      image_url: imageUrl,
+      display_domain: snap.caption || '',
+      start_date: item.start_date || null
+    };
+  }
+
+  /**
+   * 8. Vòng lặp Phân trang 100% Cursor Pagination Loop
+   */
+  async searchAndPaginateAll(params, onProgress) {
+    this.isSearching = true;
+    this.cancelRequested = false;
+    await this.ensureAuthentication();
+
+    const adsMap = new Map();
+    let currentCursor = null;
+    let hasNextPage = true;
+    let totalCount = 0;
+    let batchIndex = 0;
+    const maxBatches = 50; // Hỗ trợ quét tới ~1500 ads
+
+    try {
+      while (hasNextPage && !this.cancelRequested && batchIndex < maxBatches) {
+        batchIndex++;
+        const currentVars = this.buildVariables(params, currentCursor);
+
+        console.log(`[AdsLibrary] Đang tải Batch #${batchIndex} (Cursor: ${currentCursor ? currentCursor.slice(0, 15) + '...' : 'Initial'})...`);
+
+        if (typeof onProgress === 'function') {
+          onProgress({
+            status: 'FETCHING_PAGE',
+            currentPage: batchIndex,
+            totalFound: totalCount || adsMap.size,
+            extractedCount: adsMap.size,
+            batchAds: []
+          });
+        }
+
+        const requestBody = this.buildRequestBody(currentVars);
+        const headers = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-FB-Friendly-Name': this.friendlyName,
+          'X-FB-LSD': this.cachedLsd || '',
+          'X-ASBD-ID': '359341',
+          'Origin': 'https://www.facebook.com',
+          'Referer': 'https://www.facebook.com/ads/library/?active_status=all&ad_type=all'
+        };
+
+        const res = await fetch('https://www.facebook.com/api/graphql/', {
+          method: 'POST',
+          headers: headers,
+          body: requestBody,
+          credentials: 'include'
+        });
+
+        if (!res.ok) {
+          throw new Error(`Facebook API HTTP error: ${res.status} ${res.statusText}`);
+        }
+
+        const responseText = await res.text();
+        const connection = this.parseRelayResponse(responseText);
+
+        if (!connection) {
+          console.warn('[AdsLibrary] Không tìm thấy search_results_connection trong response.');
+          break;
+        }
+
+        if (typeof connection.count === 'number' && !totalCount) {
+          totalCount = connection.count;
+        }
+
+        const edges = connection.edges || [];
+        const batchAds = [];
+
+        for (const edge of edges) {
+          const collated = edge?.node?.collated_results || [];
+          for (const item of collated) {
+            const normalized = this.normalizeAdNode(item);
+            if (normalized && normalized.archive_id && !adsMap.has(normalized.archive_id)) {
+              adsMap.set(normalized.archive_id, normalized);
+              batchAds.push(normalized);
+            }
+          }
+        }
+
+        // Cập nhật tiến trình qua callback
+        if (typeof onProgress === 'function') {
+          onProgress({
+            status: 'PROCESSING_ADS',
+            currentPage: batchIndex,
+            totalFound: totalCount || adsMap.size,
+            extractedCount: adsMap.size,
+            batchAds: batchAds
+          });
+        }
+
+        hasNextPage = Boolean(connection.page_info?.has_next_page);
+        currentCursor = connection.page_info?.end_cursor || null;
+
+        if (!hasNextPage || !currentCursor || (totalCount > 0 && adsMap.size >= totalCount)) {
+          console.log(`[AdsLibrary] Đã thu thập đủ 100% kết quả (${adsMap.size}/${totalCount} ads).`);
+          break;
+        }
+
+        if (this.cancelRequested) {
+          console.log('[AdsLibrary] Người dùng đã yêu cầu dừng phân trang.');
+          break;
+        }
+
+        // Jitter delay thông minh để bảo vệ tài khoản (500ms - 800ms)
+        const delay = Math.floor(Math.random() * 300) + 500;
+        await new Promise(r => setTimeout(r, delay));
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'COMPLETED',
+          currentPage: batchIndex,
+          totalFound: totalCount || adsMap.size,
+          extractedCount: adsMap.size,
+          batchAds: []
+        });
+      }
+    } catch (err) {
+      console.error('[AdsLibrary] Lỗi trong searchAndPaginateAll:', err);
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'ERROR',
+          currentPage: batchIndex,
+          totalFound: totalCount || adsMap.size,
+          extractedCount: adsMap.size,
+          batchAds: [],
+          error: err.message
+        });
+      }
+      throw err;
+    } finally {
+      this.isSearching = false;
+      this.cancelRequested = false;
+    }
+
+    return Array.from(adsMap.values());
+  }
+
+  cancel() {
+    this.cancelRequested = true;
+    this.isSearching = false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── INOTE.NET SERVICE (Milestone 3: Exporter & API Client) ─────────
+// ══════════════════════════════════════════════════════════════════
+
+class InoteService {
+  /**
+   * Định dạng 1 quảng cáo sang mẫu chuẩn 8 trường của ông chủ
+   */
+  static formatAd(ad, index) {
+    const idx = index !== undefined ? index + 1 : 1;
+    const title = ad.page_name || 'Quảng cáo';
+    const archiveId = ad.archive_id || 'N/A';
+    const pageId = ad.page_id || 'N/A';
+    const pageName = ad.page_name || 'N/A';
+    const isActiveText = ad.is_active ? 'Đang chạy (is_active: true)' : 'Đã dừng (is_active: false)';
+    const platforms = ad.platforms || 'Facebook';
+    const creativeFormat = ad.creative_format || 'Hình ảnh';
+    const captionText = ad.caption_text ? ad.caption_text.replace(/\r\n/g, '\n').trim() : '';
+    const ctaText = ad.cta_text || 'Shop now';
+    const linkUrl = ad.link_url || '';
+
+    return `Mẫu ${idx}: ${title}\n` +
+           `Archive ID: ${archiveId}\n` +
+           `Page ID: ${pageId} (${pageName})\n` +
+           `Trạng thái: ${isActiveText}\n` +
+           `Nền tảng: ${platforms}\n` +
+           `Định dạng creative: ${creativeFormat}\n` +
+           `Nội dung bài viết: "${captionText}"\n` +
+           `Kêu gọi hành động (CTA): ${ctaText}\n` +
+           `Đường dẫn đích: ${linkUrl}`;
+  }
+
+  /**
+   * Định dạng toàn bộ danh sách kết quả quảng cáo
+   */
+    static formatAllAds(adsList, formatMode = 'full') {
+    if (!Array.isArray(adsList) || adsList.length === 0) return '';
+
+    // Chế độ 1: Chỉ lấy nội dung bài viết, mỗi mẫu cách nhau 1 dòng trống
+    if (formatMode === 'content' || formatMode === 'ONLY_CONTENT') {
+      return adsList
+        .map(ad => (ad.caption_text || ad.caption || '').trim())
+        .filter(Boolean)
+        .join('\n\n');
+    }
+
+    // Chế độ 2: Chỉ lấy đường dẫn đích, mỗi link xuống dòng
+    if (formatMode === 'links' || formatMode === 'ONLY_LINKS') {
+      return adsList
+        .map(ad => (ad.link_url || '').trim())
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    // Mặc định: Đầy đủ 8 trường
+    return adsList.map((ad, idx) => InoteService.formatAd(ad, idx)).join('\n\n');
+  }
+
+  /**
+   * Tạo note mới trên https://inote.net/ qua quy trình 2 bước
+   */
+  static async createNote(content, options = { openTab: true }) {
+    if (!content || typeof content !== 'string') {
+      throw new Error('Nội dung note không hợp lệ hoặc rỗng.');
+    }
+
+    // Bước 1: GET https://inote.net/ lấy URL chuyển hướng chứa note_id
+    const getRes = await fetch('https://inote.net/', {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+
+    if (!getRes.ok) {
+      throw new Error(`Lỗi khởi tạo note: HTTP ${getRes.status}`);
+    }
+
+    const noteUrl = getRes.url;
+    const match = noteUrl.match(/https?:\/\/inote\.net\/([a-zA-Z0-9_\-]+)/);
+    const noteId = match ? match[1] : noteUrl.split('/').filter(Boolean).pop();
+
+    if (!noteId) {
+      throw new Error('Không thể lấy được Note ID từ inote.net');
+    }
+
+    // Bước 2: POST lưu nội dung lên URL note vừa tạo
+    const postBody = 'text=' + encodeURIComponent(content);
+    const postRes = await fetch(`https://inote.net/${noteId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+      },
+      body: postBody
+    });
+
+    if (!postRes.ok) {
+      throw new Error(`Lỗi lưu nội dung note: HTTP ${postRes.status}`);
+    }
+
+    const finalNoteUrl = `https://inote.net/${noteId}`;
+    console.log(`[InoteService] ✓ Đã tạo thành công note trên inote.net: ${finalNoteUrl} (ID: ${noteId})`);
+
+    // Tự động mở tab mới nếu được yêu cầu và chrome.tabs khả dụng
+    let tabOpened = false;
+    if (options.openTab && typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+      try {
+        chrome.tabs.create({ url: finalNoteUrl, active: true }, () => {
+          if (chrome.runtime.lastError) {
+            console.warn('[InoteService] Không thể mở tab mới:', chrome.runtime.lastError.message);
+          }
+        });
+        tabOpened = true;
+      } catch (e) {
+        console.warn('[InoteService] Lỗi gọi chrome.tabs.create:', e);
+      }
+    }
+
+    return {
+      success: true,
+      noteUrl: finalNoteUrl,
+      noteId: noteId,
+      tabOpened: tabOpened
+    };
+  }
+}
+
+const adsLibraryService = new AdsLibraryGraphQLService();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action, payload } = message;
@@ -1203,7 +1884,94 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // ── FIND ADS (Milestone 2 & 3: GraphQL Search & inote.net) ────────
+    // ══════════════════════════════════════════════════════════════════
+    case 'FETCH_ADS_SEARCH':
+    case 'FIND_ADS_START': {
+      const searchParams = payload || {};
+      console.log('[Background] Nhận yêu cầu tìm kiếm Ads Library:', searchParams);
+
+      adsLibraryService.searchAndPaginateAll(searchParams, (progress) => {
+        // Protocol 1: SEARCH_PROGRESS_UPDATE
+        chrome.runtime.sendMessage({
+          action: 'SEARCH_PROGRESS_UPDATE',
+          payload: progress
+        }).catch(() => {});
+
+        // Protocol 2: FIND_ADS_BATCH_RECEIVED / FIND_ADS_PROGRESS / FIND_ADS_COMPLETED
+        if (progress.status === 'PROCESSING_ADS' && progress.batchAds && progress.batchAds.length > 0) {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_BATCH_RECEIVED',
+            payload: {
+              batchAds: progress.batchAds,
+              totalCount: progress.totalFound,
+              batchNumber: progress.currentPage
+            }
+          }).catch(() => {});
+        } else if (progress.status === 'COMPLETED') {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_COMPLETED',
+            payload: { totalParsed: progress.extractedCount }
+          }).catch(() => {});
+        } else if (progress.status === 'FETCHING_PAGE' || progress.status === 'SEARCHING') {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_PROGRESS',
+            payload: {
+              parsedCount: progress.extractedCount,
+              totalCount: progress.totalFound,
+              statusText: `Đang tải Batch #${progress.currentPage}...`
+            }
+          }).catch(() => {});
+        }
+      }).catch((err) => {
+        console.error('[Background] Lỗi tiến trình tìm kiếm Ads:', err);
+      });
+
+      sendResponse({ success: true, message: 'Đã bắt đầu tìm kiếm Ads Library.' });
+      return true;
+    }
+
+    case 'CANCEL_ADS_SEARCH':
+    case 'FIND_ADS_STOP': {
+      console.log('[Background] Nhận tín hiệu dừng tìm kiếm Ads Library.');
+      adsLibraryService.cancel();
+      sendResponse({ success: true, message: 'Đã dừng tìm kiếm Ads Library.' });
+      return true;
+    }
+
+    case 'CREATE_INOTE': {
+      const { content, ads, formatMode } = payload || {};
+      (async () => {
+        try {
+          let textToSave = content;
+          if (!textToSave && Array.isArray(ads) && ads.length > 0) {
+            textToSave = InoteService.formatAllAds(ads, formatMode);
+          }
+          if (!textToSave || typeof textToSave !== 'string') {
+            sendResponse({ success: false, error: 'Nội dung note không hợp lệ hoặc rỗng.' });
+            return;
+          }
+
+          const result = await InoteService.createNote(textToSave, { openTab: true });
+          sendResponse(result);
+        } catch (err) {
+          console.error('[Background] Lỗi CREATE_INOTE:', err);
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+    }
+
     default:
       break;
   }
 });
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    AdsLibraryGraphQLService,
+    InoteService,
+    adsLibraryService
+  };
+}
