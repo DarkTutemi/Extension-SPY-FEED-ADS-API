@@ -1,9 +1,9 @@
 # Graph Report - Extension-SPY-FEED-ADS-API  (2026-11-05)
 
 ## Corpus Check
-- 27 files · ~96,232 words
+- 27 files · ~97,469 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 7 file(s) not represented in the graph (top: (none) 3, .log 2, .css 1)
+- Unclassified: 5 file(s) not represented in the graph (top: (none) 3, .css 1, .bat 1)
 
 ## Summary
 - 369 nodes · 711 edges · 14 communities (10 shown, 4 thin omitted)
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2261c29d`
+- Built from commit: `654785ce`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

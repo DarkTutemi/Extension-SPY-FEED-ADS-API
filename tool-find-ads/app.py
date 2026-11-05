@@ -25,14 +25,16 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_CONFIG_PATH = os.path.join(BASE_DIR, "user_config.json")
+
 
 class AppLogger:
     """Thread-safe persistent logger that writes to both hunter.log and memory buffer."""
 
     def __init__(self, log_path: Optional[str] = None, max_entries: int = 2000):
         if not log_path:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            self.log_path = os.path.join(base_dir, "hunter.log")
+            self.log_path = os.path.join(BASE_DIR, "hunter.log")
         else:
             self.log_path = log_path
         self.lock = threading.Lock()
@@ -186,7 +188,10 @@ def start_search_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     max_workers = int(payload.get("maxWorkers", 5) or 5)
     max_batches = int(payload.get("maxPages", 15) or 15)
     min_minea_ratio = float(payload.get("minMineaRatio", 50.0) or 50.0)
-    filter_by_minea = bool(payload.get("filterByMinea", True)) and (min_minea_ratio > 0)
+    min_total_camp = int(payload.get("minTotalCamp", 100) or 0)
+    min_active_camp = int(payload.get("minActiveCamp", 0) or 0)
+    inote_kw_mode = str(payload.get("inoteKwMode") or "exact").strip()
+    filter_by_minea = bool(payload.get("filterByMinea", True)) and (min_minea_ratio > 0 or min_total_camp > 0)
     minea_lookup_mode = str(payload.get("mineaLookupMode") or "exact_name").strip()
 
     inote_url = InoteService.parse_inote_url(raw_query)
@@ -202,7 +207,7 @@ def start_search_job(payload: Dict[str, Any]) -> Dict[str, Any]:
     STATE.reset_for_run(job_mode)
     LOGGER.log(
         f"Khởi động tác vụ mới: '{raw_query[:50]}' | Mode: {job_mode.upper()} | "
-        f"Luồng: {max_workers} | Lọc Minea: {filter_by_minea} (>{min_minea_ratio:g}%, Chế độ: {minea_lookup_mode.upper()})",
+        f"Luồng: {max_workers} | Lọc Minea: {filter_by_minea} (>{min_minea_ratio:g}%, Total>={min_total_camp}, KwMode: {inote_kw_mode})",
         "INFO",
     )
 
@@ -238,7 +243,10 @@ def start_search_job(payload: Dict[str, Any]) -> Dict[str, Any]:
                     open_inote_tab=False,
                     filter_by_minea=filter_by_minea,
                     min_minea_ratio=min_minea_ratio,
+                    min_total_camp=min_total_camp,
+                    min_active_camp=min_active_camp,
                     minea_lookup_mode=minea_lookup_mode,
+                    inote_keyword_mode=inote_kw_mode,
                 )
                 pages_records = res.get("pages") or []
                 raw_unique_cnt = res.get("rawUniqueCount", len(pages_records))
@@ -249,20 +257,21 @@ def start_search_job(payload: Dict[str, Any]) -> Dict[str, Any]:
                     STATE.total_count = raw_unique_cnt if filter_by_minea else res.get("totalKeywords", 0)
                     STATE.collected_count = res.get("uniquePageCount", len(STATE.unique_pages))
                     STATE.progress_pct = 100.0
+                    filter_desc = f">{min_minea_ratio:g}%" + (f" & Total>={min_total_camp}" if min_total_camp > 0 else "")
                     if auto_note.get("noteUrl"):
                         STATE.last_inote_url = auto_note["noteUrl"]
                         STATE.last_inote_label = (
-                            f"{STATE.collected_count}/{raw_unique_cnt} Page đạt Minea >{min_minea_ratio:g}%"
+                            f"{STATE.collected_count}/{raw_unique_cnt} Page đạt Minea ({filter_desc})"
                             if filter_by_minea
                             else f"{STATE.collected_count} Page độc nhất"
                         )
                     STATE.status_text = (
-                        f"Hoàn tất: {STATE.collected_count}/{raw_unique_cnt} Page (>{min_minea_ratio:g}%)"
+                        f"Hoàn tất: {STATE.collected_count}/{raw_unique_cnt} Page ({filter_desc})"
                         if filter_by_minea
                         else f"Hoàn tất: {STATE.collected_count} Page độc nhất"
                     )
                     STATE.batch_status_text = (
-                        f"🎯 Gom {raw_unique_cnt} Page → Lọc Minea >{min_minea_ratio:g}% đạt {STATE.collected_count} Page"
+                        f"🎯 Gom {raw_unique_cnt} Page → Lọc Minea ({filter_desc}) đạt {STATE.collected_count} Page"
                         if filter_by_minea
                         else f"🎯 Hoàn tất {res.get('completedKeywords', STATE.total_count)}/{STATE.total_count} từ khóa ({STATE.collected_count} Page)"
                     )
@@ -1089,26 +1098,42 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
             <span>🎯 Chế độ Page Hunter (Gom Page &amp; Lọc Minea theo Tên "..." &amp; Tự xuất Inote)</span>
           </label>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span style="font-size:12px; color:#fb923c; font-weight:600;">Lọc Minea: Tỷ lệ &gt;</span>
-            <input type="number" id="input-ph-min-ratio" value="50" min="0" max="100" step="1" class="workers-select" style="width:58px; text-align:center; color:#fb923c; font-weight:700; border-color:rgba(249,115,22,0.5);" title="Nhập 0% nếu muốn lấy tất cả Page không lọc tỷ lệ" />
-            <span style="font-size:12px; font-weight:700; color:#fb923c;">%</span>
-            <span style="font-size:11.5px; color:#94a3b8; margin-left:4px;">Số luồng:</span>
-            <select id="select-workers" class="workers-select">
-              <option value="5" selected>5 luồng (Turbo)</option>
-              <option value="8">8 luồng (Max Speed)</option>
-              <option value="3">3 luồng (Chuẩn)</option>
-              <option value="1">1 luồng (Tuần tự)</option>
-            </select>
-            <span style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:4px; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8;" title="Đo Minea chính xác bằng tên Page đặt trong dấu ngoặc kép: q=&quot;...&quot; &amp; search_type=keyword_exact_phrase">
-              Đo: "[Tên Page]" (Chính xác)
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:11.5px; color:#94a3b8;">Từ khóa Inote:</span>
+              <select id="select-inote-kw-mode" class="workers-select" style="color:#34d399; border-color:rgba(16,185,129,0.5);" title="Chế độ tìm kiếm cho từng dòng từ khóa trong link Inote">
+                <option value="exact" selected>Cụm từ chính xác ("...")</option>
+                <option value="unordered">Mở rộng (Unordered)</option>
+              </select>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:11.5px; color:#fb923c; font-weight:600;">Lọc Minea: Tỷ lệ &gt;</span>
+              <input type="number" id="input-ph-min-ratio" value="50" min="0" max="100" step="1" class="workers-select" style="width:52px; text-align:center; color:#fb923c; font-weight:700; border-color:rgba(249,115,22,0.5);" title="Tỷ lệ Active/Total tối thiểu (Đặt 0% nếu muốn lấy tất cả)" />
+              <span style="font-size:12px; font-weight:700; color:#fb923c;">%</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:11.5px; color:#38bdf8; font-weight:600;">&amp; Total Camp &gt;=</span>
+              <input type="number" id="input-ph-min-total" value="100" min="0" step="10" class="workers-select" style="width:62px; text-align:center; color:#38bdf8; font-weight:700; border-color:rgba(56,189,248,0.5);" title="Page phải có từ 100 camp trở lên, đặt 0 nếu không giới hạn" />
+              <span style="font-size:11.5px; font-weight:600; color:#38bdf8;">camp</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:4px;">
+              <span style="font-size:11.5px; color:#94a3b8;">Số luồng:</span>
+              <select id="select-workers" class="workers-select">
+                <option value="5" selected>5 luồng (Turbo)</option>
+                <option value="8">8 luồng (Max Speed)</option>
+                <option value="3">3 luồng (Chuẩn)</option>
+                <option value="1">1 luồng (Tuần tự)</option>
+              </select>
+            </div>
+            <span style="font-size:11px; font-weight:600; padding:3px 7px; border-radius:4px; background:rgba(56,189,248,0.15); border:1px solid rgba(56,189,248,0.4); color:#38bdf8;" title="Đo Minea chính xác bằng tên Page đặt trong dấu ngoặc kép: q=&quot;...&quot; &amp; search_type=keyword_exact_phrase">
+              Đo: "[Tên Page]"
             </span>
           </div>
         </div>
         <div style="font-size:11.5px; color:#94a3b8; display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding-top:6px; border-top:1px dashed rgba(16,185,129,0.22);">
           <span>⚡ <b>Quy trình 1 bước:</b></span>
-          <span style="color:#38bdf8;">[Pha 1] Quét Inote gom Page (áp dụng đúng Bộ lọc bên dưới)</span>
+          <span style="color:#38bdf8;">[Pha 1] Quét Inote (<b id="hint-ph-kw-mode">Chính xác "..."</b>) gom Page theo Bộ lọc</span>
           <span style="color:#64748b;">➔</span>
-          <span style="color:#fb923c;">[Pha 2] Đo Minea theo Tên "..." &amp; Lọc tỷ lệ &gt; <b id="hint-ph-ratio">50</b>%</span>
+          <span style="color:#fb923c;">[Pha 2] Đo Minea theo Tên "..." &amp; Lọc: Tỷ lệ &gt; <b id="hint-ph-ratio">50</b>% &amp; Total &gt;= <b id="hint-ph-total">100</b> camp</span>
           <span style="color:#64748b;">➔</span>
           <span style="color:#34d399;">[Pha 3] Tự xuất link Inote mới</span>
         </div>
@@ -1230,6 +1255,19 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
             <option value="SORT_BY_TOTAL_IMPRESSIONS" selected>Lượt hiển thị cao nhất (Impressions: high to low)</option>
             <option value="SORT_BY_RELEVANCY_MONTHLY_GROUPED">Mức độ liên quan (Relevancy)</option>
           </select>
+        </div>
+
+        <!-- Nút Lưu & Khôi Phục Cấu Hình Bộ Lọc -->
+        <div style="margin-top:14px; padding-top:11px; border-top:1px dashed var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <div style="font-size:12px; color:#94a3b8; display:flex; align-items:center; gap:6px;">
+            <span style="font-size:14px;">💾</span>
+            <span>Lưu lại toàn bộ Bộ lọc &amp; Cài đặt Page Hunter để tự động nạp cho các lần dùng sau.</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="save-config-status" style="font-size:12px; color:#34d399; font-weight:700; display:none;"></span>
+            <button class="btn btn-sec" id="btn-reset-filters" style="font-size:12px; padding:6px 13px;" title="Khôi phục lại cài đặt gốc ban đầu">↺ Khôi phục mặc định</button>
+            <button class="btn btn-primary" id="btn-save-filters" style="font-size:12px; padding:6px 15px; background:linear-gradient(135deg, #0ea5e9, #0284c7); box-shadow:0 0 12px rgba(14,165,233,0.35);" title="Lưu cấu hình bộ lọc hiện tại">💾 Lưu cấu hình bộ lọc</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1530,12 +1568,25 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
       const badge = el('badge-search-type');
       const ratioRaw = el('input-ph-min-ratio') ? parseFloat(el('input-ph-min-ratio').value) : 50;
       const ratioVal = isNaN(ratioRaw) ? 50 : ratioRaw;
+      const totalRaw = el('input-ph-min-total') ? parseInt(el('input-ph-min-total').value, 10) : 100;
+      const totalVal = isNaN(totalRaw) ? 100 : totalRaw;
+      const inoteKwMode = el('select-inote-kw-mode') ? el('select-inote-kw-mode').value : 'exact';
+
       if (el('hint-ph-ratio')) {
-        el('hint-ph-ratio').textContent = ratioVal > 0 ? ratioVal : '0 (Lấy tất cả)';
+        el('hint-ph-ratio').textContent = ratioVal > 0 ? ratioVal : '0 (Tất cả)';
+      }
+      if (el('hint-ph-total')) {
+        el('hint-ph-total').textContent = totalVal > 0 ? totalVal : '0 (Không giới hạn)';
+      }
+      if (el('hint-ph-kw-mode')) {
+        el('hint-ph-kw-mode').textContent = (inoteKwMode === 'exact') ? 'Chính xác "..."' : 'Mở rộng (Unordered)';
       }
 
       if (isPageHunter) {
-        badge.textContent = ratioVal > 0 ? `🎯 PAGE_HUNTER_EXACT_${ratioVal}%` : '🎯 PAGE_HUNTER_ALL';
+        let tag = `🎯 PAGE_HUNTER`;
+        if (ratioVal > 0) tag += `_${ratioVal}%`;
+        if (totalVal > 0) tag += `_T${totalVal}`;
+        badge.textContent = tag;
         badge.style.color = '#34d399';
         badge.style.borderColor = 'rgba(16,185,129,0.5)';
       } else if (isInote) {
@@ -1555,7 +1606,7 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
       if (isPageHunter) {
         el('minea-panel').style.display = 'none';
         el('label-stat-total').textContent = 'TỔNG TỪ KHÓA';
-        el('label-stat-collected').textContent = ratioVal > 0 ? 'PAGE ĐẠT CHUẨN' : 'PAGE ĐỘC NHẤT';
+        el('label-stat-collected').textContent = (ratioVal > 0 || totalVal > 0) ? 'PAGE ĐẠT CHUẨN' : 'PAGE ĐỘC NHẤT';
         el('chk-only-page-name').checked = true;
         el('chk-only-content').checked = false;
         el('chk-only-links').checked = false;
@@ -1788,9 +1839,9 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
     el('chk-exact-phrase').addEventListener('change', syncSearchTypeBadge);
     
     el('chk-page-hunter').addEventListener('change', syncSearchTypeBadge);
-    if (el('input-ph-min-ratio')) {
-      el('input-ph-min-ratio').addEventListener('input', syncSearchTypeBadge);
-    }
+    if (el('input-ph-min-ratio')) el('input-ph-min-ratio').addEventListener('input', syncSearchTypeBadge);
+    if (el('input-ph-min-total')) el('input-ph-min-total').addEventListener('input', syncSearchTypeBadge);
+    if (el('select-inote-kw-mode')) el('select-inote-kw-mode').addEventListener('change', syncSearchTypeBadge);
 
     el('btn-clear-query').addEventListener('click', () => {
       el('input-query').value = '';
@@ -1850,6 +1901,9 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
 
       const ratioRaw = el('input-ph-min-ratio') ? parseFloat(el('input-ph-min-ratio').value) : 50;
       const minRatio = isNaN(ratioRaw) ? 50 : ratioRaw;
+      const totalRaw = el('input-ph-min-total') ? parseInt(el('input-ph-min-total').value, 10) : 100;
+      const minTotal = isNaN(totalRaw) ? 100 : totalRaw;
+      const inoteKwMode = el('select-inote-kw-mode') ? el('select-inote-kw-mode').value : 'exact';
       await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1857,8 +1911,10 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
           filters,
           pageHunterMode: el('chk-page-hunter').checked,
           maxWorkers: parseInt(el('select-workers').value || '5', 10),
-          filterByMinea: (minRatio > 0),
+          filterByMinea: (minRatio > 0 || minTotal > 0),
           minMineaRatio: minRatio,
+          minTotalCamp: minTotal,
+          inoteKwMode: inoteKwMode,
           mineaLookupMode: 'exact_name',
         }),
       });
@@ -2016,7 +2072,165 @@ HTML_DASHBOARD = r"""<!DOCTYPE html>
       await pollState();
     });
 
-    syncSearchTypeBadge();
+    // --- Bộ lọc cấu hình: Lưu / Nạp / Khôi phục mặc định ---
+    function getFilterConfigObj() {
+      const platforms = {};
+      document.querySelectorAll('.chk-platform').forEach(c => {
+        platforms[c.value] = c.checked;
+      });
+      return {
+        country: el('select-country') ? el('select-country').value : 'US',
+        adType: el('select-ad-type') ? el('select-ad-type').value : 'ALL',
+        platforms: platforms,
+        mediaType: el('select-media-type') ? el('select-media-type').value : 'ALL',
+        activeStatus: el('select-active-status') ? el('select-active-status').value : 'ACTIVE',
+        datePreset: el('select-date-preset') ? el('select-date-preset').value : 'ALL',
+        dateCustom: el('input-date-custom') ? el('input-date-custom').value : '',
+        language: el('select-lang') ? el('select-lang').value : 'ALL',
+        sortBy: el('select-sort-by') ? el('select-sort-by').value : 'SORT_BY_TOTAL_IMPRESSIONS',
+        exactPhrase: el('chk-exact-phrase') ? el('chk-exact-phrase').checked : false,
+        pageHunter: el('chk-page-hunter') ? el('chk-page-hunter').checked : true,
+        workers: el('select-workers') ? el('select-workers').value : '8',
+        minRatio: el('input-ph-min-ratio') ? el('input-ph-min-ratio').value : '50',
+        minTotalCamp: el('input-ph-min-total') ? el('input-ph-min-total').value : '100',
+        inoteKwMode: el('select-inote-kw-mode') ? el('select-inote-kw-mode').value : 'exact',
+        viewMode: el('select-view-mode') ? el('select-view-mode').value : 'compact',
+      };
+    }
+
+    function applyFilterConfigObj(cfg) {
+      if (!cfg || typeof cfg !== 'object') return;
+      if (cfg.country && el('select-country')) el('select-country').value = cfg.country;
+      if (cfg.adType && el('select-ad-type')) el('select-ad-type').value = cfg.adType;
+      if (cfg.mediaType && el('select-media-type')) el('select-media-type').value = cfg.mediaType;
+      if (cfg.activeStatus && el('select-active-status')) el('select-active-status').value = cfg.activeStatus;
+      if (cfg.datePreset && el('select-date-preset')) {
+        el('select-date-preset').value = cfg.datePreset;
+        if (el('input-date-custom')) {
+          el('input-date-custom').style.display = (cfg.datePreset === 'custom') ? 'block' : 'none';
+          if (cfg.dateCustom) el('input-date-custom').value = cfg.dateCustom;
+        }
+      }
+      if (cfg.language && el('select-lang')) el('select-lang').value = cfg.language;
+      if (cfg.sortBy && el('select-sort-by')) el('select-sort-by').value = cfg.sortBy;
+      if (typeof cfg.exactPhrase === 'boolean' && el('chk-exact-phrase')) el('chk-exact-phrase').checked = cfg.exactPhrase;
+      if (typeof cfg.pageHunter === 'boolean' && el('chk-page-hunter')) el('chk-page-hunter').checked = cfg.pageHunter;
+      if (cfg.workers && el('select-workers')) el('select-workers').value = cfg.workers;
+      if (cfg.minRatio !== undefined && el('input-ph-min-ratio')) el('input-ph-min-ratio').value = cfg.minRatio;
+      if (cfg.minTotalCamp !== undefined && el('input-ph-min-total')) el('input-ph-min-total').value = cfg.minTotalCamp;
+      if (cfg.inoteKwMode && el('select-inote-kw-mode')) el('select-inote-kw-mode').value = cfg.inoteKwMode;
+      if (cfg.viewMode && el('select-view-mode')) el('select-view-mode').value = cfg.viewMode;
+      if (cfg.platforms && typeof cfg.platforms === 'object') {
+        document.querySelectorAll('.chk-platform').forEach(c => {
+          if (typeof cfg.platforms[c.value] === 'boolean') {
+            c.checked = cfg.platforms[c.value];
+          }
+        });
+      }
+      syncSearchTypeBadge();
+    }
+
+    async function saveFilters() {
+      const cfg = getFilterConfigObj();
+      try {
+        localStorage.setItem('find_ads_filters_cfg', JSON.stringify(cfg));
+      } catch (e) {}
+      const statusEl = el('save-config-status');
+      if (statusEl) {
+        statusEl.textContent = '⏳ Đang lưu...';
+        statusEl.style.display = 'inline';
+        statusEl.style.color = '#38bdf8';
+      }
+      try {
+        const res = await fetch('/api/config/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: cfg }),
+        });
+        const data = await res.json();
+        if (data && data.success) {
+          if (statusEl) {
+            statusEl.textContent = '✅ Đã lưu cấu hình!';
+            statusEl.style.color = '#34d399';
+            setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+          }
+        } else {
+          throw new Error((data && data.error) || 'Lỗi lưu cấu hình');
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = '⚠️ ' + (err.message || 'Lỗi');
+          statusEl.style.color = '#f87171';
+          setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
+        }
+      }
+    }
+
+    async function loadSavedFilters() {
+      let cfg = null;
+      try {
+        const res = await fetch('/api/config/load');
+        const data = await res.json();
+        if (data && data.success && data.config && Object.keys(data.config).length > 0) {
+          cfg = data.config;
+        }
+      } catch (e) {}
+      if (!cfg) {
+        try {
+          const raw = localStorage.getItem('find_ads_filters_cfg');
+          if (raw) cfg = JSON.parse(raw);
+        } catch (e) {}
+      }
+      if (cfg) {
+        applyFilterConfigObj(cfg);
+      }
+    }
+
+    async function resetFilters() {
+      try {
+        localStorage.removeItem('find_ads_filters_cfg');
+      } catch (e) {}
+      try {
+        await fetch('/api/config/reset', { method: 'POST' });
+      } catch (e) {}
+      if (el('select-country')) el('select-country').value = 'US';
+      if (el('select-ad-type')) el('select-ad-type').value = 'ALL';
+      if (el('select-media-type')) el('select-media-type').value = 'ALL';
+      if (el('select-active-status')) el('select-active-status').value = 'ACTIVE';
+      if (el('select-date-preset')) el('select-date-preset').value = 'ALL';
+      if (el('input-date-custom')) {
+        el('input-date-custom').value = '';
+        el('input-date-custom').style.display = 'none';
+      }
+      if (el('select-lang')) el('select-lang').value = 'ALL';
+      if (el('select-sort-by')) el('select-sort-by').value = 'SORT_BY_TOTAL_IMPRESSIONS';
+      if (el('chk-exact-phrase')) el('chk-exact-phrase').checked = false;
+      if (el('chk-page-hunter')) el('chk-page-hunter').checked = true;
+      if (el('select-workers')) el('select-workers').value = '8';
+      if (el('input-ph-min-ratio')) el('input-ph-min-ratio').value = '50';
+      if (el('input-ph-min-total')) el('input-ph-min-total').value = '100';
+      if (el('select-inote-kw-mode')) el('select-inote-kw-mode').value = 'exact';
+      document.querySelectorAll('.chk-platform').forEach(c => { c.checked = true; });
+      syncSearchTypeBadge();
+      const statusEl = el('save-config-status');
+      if (statusEl) {
+        statusEl.textContent = '↺ Đã khôi phục mặc định!';
+        statusEl.style.color = '#fbbf24';
+        statusEl.style.display = 'inline';
+        setTimeout(() => { statusEl.style.display = 'none'; }, 2500);
+      }
+    }
+
+    if (el('btn-save-filters')) {
+      el('btn-save-filters').addEventListener('click', saveFilters);
+    }
+    if (el('btn-reset-filters')) {
+      el('btn-reset-filters').addEventListener('click', resetFilters);
+    }
+
+    loadSavedFilters().finally(() => {
+      syncSearchTypeBadge();
+    });
     pollState();
     fetchLogs(true);
     setInterval(() => {
@@ -2092,11 +2306,43 @@ class FindAdsRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(content)
             return
 
+        if parsed.path == "/api/config/load":
+            if os.path.exists(USER_CONFIG_PATH):
+                try:
+                    with open(USER_CONFIG_PATH, "r", encoding="utf-8") as f:
+                        saved = json.load(f)
+                    self._send_json({"success": True, "config": saved})
+                    return
+                except Exception as e:
+                    self._send_json({"success": False, "error": str(e), "config": {}})
+                    return
+            self._send_json({"success": True, "config": {}})
+            return
+
         self._send_json({"error": "Not found"}, status=404)
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         body = self._read_json_body()
+
+        if parsed.path == "/api/config/save":
+            cfg = body.get("config") if "config" in body else body
+            try:
+                with open(USER_CONFIG_PATH, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+                self._send_json({"success": True})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, status=500)
+            return
+
+        if parsed.path == "/api/config/reset":
+            if os.path.exists(USER_CONFIG_PATH):
+                try:
+                    os.remove(USER_CONFIG_PATH)
+                except Exception:
+                    pass
+            self._send_json({"success": True})
+            return
 
         if parsed.path == "/api/logs/clear":
             LOGGER.clear()

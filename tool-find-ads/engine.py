@@ -1155,17 +1155,25 @@ class FacebookAdsHunterEngine:
         raw_keyword: str,
         base_params: Dict[str, Any],
         worker_session: requests.Session,
+        inote_keyword_mode: str = "exact",
     ) -> List[Dict[str, Any]]:
         """
         Fetches 100% of matching Page entities for a single keyword line with:
         - Up to 3 automatic retries if network hiccups
         - Smart fallback (strips trailing punctuation & falls back to first 12 core words if long line returns 0)
         - STRICTLY binds and respects all user-configured filters (Country, Media Type, Platforms, Language, Date, Sort)
+        - inote_keyword_mode: 'exact' (forces exact phrase "..."), 'unordered' (broad search), or 'inherit'
         """
         line_has_quotes = bool(re.match(r'^["“\'].*["”\']$', raw_keyword))
-        use_exact = bool(base_params.get("isExactPhrase")) or line_has_quotes
         clean_line = re.sub(r'^["“\']+|["”\']+$', "", raw_keyword).strip()
         clean_line_no_dot = re.sub(r"[.!?]+$", "", clean_line).strip()
+
+        if inote_keyword_mode == "exact":
+            use_exact = True
+        elif inote_keyword_mode == "unordered":
+            use_exact = line_has_quotes
+        else:
+            use_exact = bool(base_params.get("isExactPhrase")) or line_has_quotes
 
         # STRICTLY inherit all user filters from base_params (Country, Media Type, Platforms, Language, StartDate, Sort, Category)
         step_params = {
@@ -1296,7 +1304,10 @@ class FacebookAdsHunterEngine:
         open_inote_tab: bool = True,
         filter_by_minea: bool = True,
         min_minea_ratio: float = 50.0,
+        min_total_camp: int = 100,
+        min_active_camp: int = 0,
         minea_lookup_mode: str = "exact_name",
+        inote_keyword_mode: str = "exact",
     ) -> Dict[str, Any]:
         """
         Runs 2-Stage Page Hunter across all lines from an inote.net link (or multi-line input):
@@ -1356,7 +1367,8 @@ class FacebookAdsHunterEngine:
             "STAGE1",
         )
         num_workers = max(1, min(int(concurrency or 5), total_kw, 8))
-        self.log(f"Bắt đầu GĐ1: Gom tên Page với {num_workers} luồng song song...", "STAGE1")
+        kw_mode_lbl = "CỤM TỪ CHÍNH XÁC (\"...\")" if inote_keyword_mode == "exact" else "MỞ RỘNG (Unordered)"
+        self.log(f"Bắt đầu GĐ1: Gom tên Page với {num_workers} luồng song song (Chế độ từ khóa: {kw_mode_lbl})...", "STAGE1")
         unique_pages_map: Dict[str, Dict[str, Any]] = {}
         next_idx = 0
         completed_kw = 0
@@ -1392,7 +1404,7 @@ class FacebookAdsHunterEngine:
                 short_kw = kw_line[:30] + ("..." if len(kw_line) > 30 else "")
 
                 entities = self._harvest_pages_for_single_keyword(
-                    kw_line, base_params, worker_session
+                    kw_line, base_params, worker_session, inote_keyword_mode=inote_keyword_mode
                 )
 
                 new_unique_records: List[Dict[str, Any]] = []
@@ -1467,15 +1479,15 @@ class FacebookAdsHunterEngine:
             "STAGE1_DONE",
         )
 
-        # ── STAGE 2: Filter unique pages by Minea Active vs Total Camp Ratio > min_minea_ratio ──
+        # ── STAGE 2: Filter unique pages by Minea Active vs Total Camp Ratio > min_minea_ratio & Total Camp >= min_total_camp ──
         if filter_by_minea and raw_unique_pages and not self.cancel_requested:
             total_candidates = len(raw_unique_pages)
-            minea_workers = max(1, min(int(concurrency or 3), total_candidates, 8))
+            minea_workers = max(1, min(int(concurrency or 5), total_candidates, 8))
             minea_next_idx = 0
             minea_done_cnt = 0
             self.log(
                 f"Bắt đầu GĐ2: Đo Minea bằng Tên '...' cho {total_candidates} Page với {minea_workers} luồng "
-                f"(Điều kiện: Tỷ lệ > {min_minea_ratio:g}%, Chế độ: {minea_lookup_mode.upper()})...",
+                f"(Điều kiện: Tỷ lệ > {min_minea_ratio:g}% & Total Camp >= {min_total_camp}, Chế độ: {minea_lookup_mode.upper()})...",
                 "STAGE2_START",
             )
 
@@ -1491,7 +1503,7 @@ class FacebookAdsHunterEngine:
                         "phase": "stage2_minea",
                         "rawUniqueCount": total_candidates,
                         "statusMessage": (
-                            f"🔥 GĐ2 [0/{total_candidates} Page]: Đang lọc Minea Active/Total > {min_minea_ratio:g}% ({minea_workers} luồng)..."
+                            f"🔥 GĐ2 [0/{total_candidates} Page]: Đang lọc Minea Active/Total > {min_minea_ratio:g}% & Total >= {min_total_camp} ({minea_workers} luồng)..."
                         ),
                     }
                 )
@@ -1516,7 +1528,12 @@ class FacebookAdsHunterEngine:
                     act_c = m_stats["activeCount"]
                     tot_c = m_stats["totalCount"]
                     rat_p = m_stats["ratioPercent"]
-                    passed = rat_p > float(min_minea_ratio) and act_c > 0
+
+                    # Filter condition: Ratio > min_minea_ratio, Total Camp >= min_total_camp, Active Camp >= min_active_camp
+                    passed_ratio = (rat_p > float(min_minea_ratio)) if min_minea_ratio > 0 else True
+                    passed_total = (tot_c >= int(min_total_camp)) if min_total_camp > 0 else True
+                    passed_active = (act_c >= int(min_active_camp)) if min_active_camp > 0 else (act_c > 0)
+                    passed = passed_ratio and passed_total and passed_active
 
                     enriched = {
                         **cand,
@@ -1525,7 +1542,7 @@ class FacebookAdsHunterEngine:
                         "minea_ratio": rat_p,
                         "creative_format": f"Active: {act_c}/{tot_c} ({rat_p}%)",
                         "caption_text": (
-                            f"🔥 Minea Active/Total: {act_c}/{tot_c} camp ({rat_p}% > {min_minea_ratio:g}%) | "
+                            f"🔥 Minea: {act_c}/{tot_c} camp ({rat_p}% > {min_minea_ratio:g}% & Total >={min_total_camp}) | "
                             f"{cand.get('caption_text', '')}"
                         ),
                     }
@@ -1544,13 +1561,19 @@ class FacebookAdsHunterEngine:
                     if passed:
                         self.log(
                             f"[{done_now}/{total_candidates}] [ĐẠT CHUẨN] '{p_name_log}' (ID: {p_id_log}) "
-                            f"-> Active: {act_c} / Total: {tot_c} | Tỷ lệ: {rat_p}% > {min_minea_ratio:g}% => GIỮ LẠI (Đạt: {passed_now})",
+                            f"-> Active: {act_c} / Total: {tot_c} | Tỷ lệ: {rat_p}% > {min_minea_ratio:g}% & Total >= {min_total_camp} => GIỮ LẠI (Đạt: {passed_now})",
                             "PASS",
                         )
                     elif act_c == 0:
                         self.log(
                             f"[{done_now}/{total_candidates}] [LOẠI - 0 ACTIVE] '{p_name_log}' (ID: {p_id_log}) "
                             f"-> Không có ad nào đang chạy (0/{tot_c}) => BỎ QUA",
+                            "REJECT",
+                        )
+                    elif not passed_total:
+                        self.log(
+                            f"[{done_now}/{total_candidates}] [LOẠI - TOTAL THẤP] '{p_name_log}' (ID: {p_id_log}) "
+                            f"-> Total: {tot_c} camp < {min_total_camp} camp tối thiểu => BỎ QUA",
                             "REJECT",
                         )
                     else:
