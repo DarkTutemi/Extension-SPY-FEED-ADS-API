@@ -1618,9 +1618,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // Other filter fields
     const selectMediaType = getEl('find-ads-media-type', 'findAdsMediaType');
     const selectActiveStatus = getEl('find-ads-active-status', 'findAdsActiveStatus');
-    const inputStartDate = getEl('find-ads-start-date', 'findAdsStartDate');
+    const selectStartDate = getEl('find-ads-start-date', 'findAdsStartDate');
+    const inputCustomDate = document.getElementById('find-ads-custom-date');
+    const customDateWrapper = document.getElementById('find-ads-custom-date-wrapper');
+    const btnClearStartDate = document.getElementById('btn-clear-start-date');
     const selectLanguage = getEl('find-ads-language', 'findAdsLanguage');
     const selectSortBy = getEl('find-ads-sort-by', 'findAdsSortBy');
+
+    // Minea Active vs Total Counter Elements
+    const btnCheckActiveTotal = document.getElementById('btn-check-active-total');
+    const mineaActiveCountEl = document.getElementById('minea-active-count');
+    const mineaActiveRawEl = document.getElementById('minea-active-raw');
+    const mineaTotalCountEl = document.getElementById('minea-total-count');
+    const mineaTotalRawEl = document.getElementById('minea-total-raw');
+    const mineaRatioPercentEl = document.getElementById('minea-ratio-percent');
+    const mineaRatioStatusEl = document.getElementById('minea-ratio-status');
+    const mineaRatioBarFillEl = document.getElementById('minea-ratio-bar-fill');
 
     // Metrics & Progress
     const totalCountEl = getEl('find-ads-total-count', 'findAdsTotalCount');
@@ -1691,6 +1704,125 @@ document.addEventListener('DOMContentLoaded', () => {
       return ok;
     }
 
+    function calculatePastDate(months) {
+      const num = parseInt(months, 10);
+      if (isNaN(num) || num <= 0) return null;
+      const d = new Date();
+      const targetDay = d.getDate();
+      d.setMonth(d.getMonth() - num);
+      if (d.getDate() !== targetDay) d.setDate(0);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // ── Minea Active vs Total Helpers & UI Updater ───────────────────
+    function smartRound(num) {
+      const n = Number(num) || 0;
+      if (n < 100) return n;
+      if (n >= 10000) return Math.round(n / 1000) * 1000;
+      if (n >= 1000) return Math.round(n / 100) * 100;
+      if (n >= 100) return Math.round(n / 10) * 10;
+      return n;
+    }
+
+    function formatNumberWithoutDecimals(num) {
+      const n = Number(num) || 0;
+      return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(n);
+    }
+
+    function formatNumberCompact(num) {
+      const n = Number(num) || 0;
+      if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+      return n.toString();
+    }
+
+    function updateMineaCounterUI(payload = {}) {
+      const status = payload.status || 'SUCCESS';
+
+      if (status === 'LOADING') {
+        if (btnCheckActiveTotal) {
+          btnCheckActiveTotal.disabled = true;
+          btnCheckActiveTotal.textContent = '⏳ Đang đo...';
+        }
+        if (mineaActiveCountEl) mineaActiveCountEl.textContent = '...';
+        if (mineaActiveRawEl) mineaActiveRawEl.textContent = 'Đang lấy Active...';
+        if (mineaTotalCountEl) mineaTotalCountEl.textContent = '...';
+        if (mineaTotalRawEl) mineaTotalRawEl.textContent = 'Đang lấy Total...';
+        if (mineaRatioPercentEl) mineaRatioPercentEl.textContent = '...%';
+        if (mineaRatioStatusEl) mineaRatioStatusEl.textContent = 'Đang tính tỷ lệ...';
+        if (mineaRatioBarFillEl) mineaRatioBarFillEl.style.width = '15%';
+        return;
+      }
+
+      if (btnCheckActiveTotal) {
+        btnCheckActiveTotal.disabled = false;
+        btnCheckActiveTotal.textContent = '⚡ Check nhanh';
+      }
+
+      if (status === 'ERROR') {
+        if (mineaActiveCountEl) mineaActiveCountEl.textContent = 'N/A';
+        if (mineaActiveRawEl) mineaActiveRawEl.textContent = 'Không lấy được';
+        if (mineaTotalCountEl) mineaTotalCountEl.textContent = 'N/A';
+        if (mineaTotalRawEl) mineaTotalRawEl.textContent = 'Không lấy được';
+        if (mineaRatioPercentEl) mineaRatioPercentEl.textContent = '0%';
+        if (mineaRatioStatusEl) mineaRatioStatusEl.textContent = payload.error || 'Lỗi kết nối';
+        if (mineaRatioBarFillEl) mineaRatioBarFillEl.style.width = '0%';
+        return;
+      }
+
+      const rawActive = typeof payload.activeCount === 'number' ? Math.max(0, payload.activeCount) : 0;
+      const rawTotal = typeof payload.totalCount === 'number' ? Math.max(rawActive, payload.totalCount) : rawActive;
+      const ratioPercent = typeof payload.ratioPercent === 'number'
+        ? payload.ratioPercent
+        : (rawTotal > 0 ? Number(((rawActive / rawTotal) * 100).toFixed(1)) : 0);
+
+      const roundedActive = typeof payload.smartActive === 'number' ? payload.smartActive : smartRound(rawActive);
+      const roundedTotal = typeof payload.smartTotal === 'number' ? payload.smartTotal : smartRound(rawTotal);
+
+      const formattedActive = payload.formattedActive || `~${formatNumberWithoutDecimals(roundedActive)}`;
+      const formattedTotal = payload.formattedTotal || `${rawTotal > 50000 ? '>' : '~'}${formatNumberCompact(roundedTotal)}`;
+
+      if (mineaActiveCountEl) mineaActiveCountEl.textContent = formattedActive;
+      if (mineaActiveRawEl) mineaActiveRawEl.textContent = `Chính xác: ${formatNumberWithoutDecimals(rawActive)} camp`;
+
+      if (mineaTotalCountEl) mineaTotalCountEl.textContent = formattedTotal;
+      if (mineaTotalRawEl) mineaTotalRawEl.textContent = `Tổng: ${formatNumberWithoutDecimals(rawTotal)} camp`;
+
+      if (mineaRatioPercentEl) {
+        mineaRatioPercentEl.textContent = `${ratioPercent}%`;
+        if (ratioPercent >= 50) {
+          mineaRatioPercentEl.style.color = '#22c55e';
+        } else if (ratioPercent >= 20) {
+          mineaRatioPercentEl.style.color = '#fb923c';
+        } else {
+          mineaRatioPercentEl.style.color = '#94a3b8';
+        }
+      }
+
+      if (mineaRatioStatusEl) {
+        if (rawTotal === 0) {
+          mineaRatioStatusEl.textContent = '0 / 0 camp';
+        } else if (ratioPercent >= 50) {
+          mineaRatioStatusEl.textContent = `🔥 Đang vít mạnh (${formatNumberWithoutDecimals(rawActive)}/${formatNumberWithoutDecimals(rawTotal)})`;
+        } else if (ratioPercent >= 20) {
+          mineaRatioStatusEl.textContent = `⚡ Duy trì đều (${formatNumberWithoutDecimals(rawActive)}/${formatNumberWithoutDecimals(rawTotal)})`;
+        } else {
+          mineaRatioStatusEl.textContent = `💤 Giảm camp (${formatNumberWithoutDecimals(rawActive)}/${formatNumberWithoutDecimals(rawTotal)})`;
+        }
+      }
+
+      if (mineaRatioBarFillEl) {
+        const clampedWidth = Math.min(100, Math.max(0, ratioPercent));
+        mineaRatioBarFillEl.style.width = `${clampedWidth}%`;
+      }
+    }
+
     // ── Function 1: getSearchParams() ────────────────────────────────
     function getSearchParams() {
       let rawKeyword = (inputKeyword ? inputKeyword.value : '').trim();
@@ -1717,9 +1849,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const mediaType = selectMediaType ? selectMediaType.value : 'ALL';
       const activeStatus = selectActiveStatus ? selectActiveStatus.value : 'ACTIVE';
-      const startDate = (inputStartDate && inputStartDate.value) ? inputStartDate.value : null;
-      const language = selectLanguage ? selectLanguage.value : 'en';
+      let startDate = null;
+      if (selectStartDate) {
+        const val = selectStartDate.value;
+        if (val === 'CUSTOM') {
+          startDate = (inputCustomDate && inputCustomDate.value) ? inputCustomDate.value.trim() : null;
+        } else if (val && val !== 'ALL') {
+          startDate = calculatePastDate(val);
+        }
+      }
+      const language = selectLanguage ? selectLanguage.value : 'ALL';
       const sortMode = selectSortBy ? selectSortBy.value : 'TOTAL_IMPRESSIONS_DESC';
+
+      // Nếu người dùng chọn cả 6 nền tảng (hoặc không chọn nền tảng nào), gửi mảng rỗng [] để quét 100% nền tảng như curl Ads Library
+      const finalPlatforms = (publisherPlatforms.length === 6 || publisherPlatforms.length === 0) ? [] : publisherPlatforms;
 
       return {
         keyword,
@@ -1727,11 +1870,11 @@ document.addEventListener('DOMContentLoaded', () => {
         searchType,
         country,
         category,
-        publisherPlatforms: publisherPlatforms.length > 0 ? publisherPlatforms : ['FACEBOOK', 'INSTAGRAM', 'AUDIENCE_NETWORK'],
+        publisherPlatforms: finalPlatforms,
         mediaType,
         activeStatus,
-        startDate,
-        language,
+        startDate: startDate || null,
+        language: language || 'ALL',
         sortMode,
         sortBy: sortMode
       };
@@ -1764,12 +1907,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Progress bar fill %
       if (progressBar) {
         let percent = 0;
-        if (findAdsState.totalFound > 0) {
+        if (status === 'COMPLETED') {
+          percent = 100;
+        } else if (findAdsState.totalFound > 0) {
           percent = Math.min(100, Math.max(5, Math.round((findAdsState.extractedCount / findAdsState.totalFound) * 100)));
         } else if (status === 'SEARCHING' || status === 'FETCHING_PAGE') {
           percent = 20;
-        } else if (status === 'COMPLETED') {
-          percent = 100;
         }
         progressBar.style.width = `${percent}%`;
       }
@@ -1787,8 +1930,28 @@ document.addEventListener('DOMContentLoaded', () => {
           if (btnStart) btnStart.style.display = 'flex';
           if (btnStop) btnStop.style.display = 'none';
         } else if (status === 'ERROR') {
-          badgeStatus.className = 'badge-status';
-          statusText.textContent = message || 'Lỗi quét Ads';
+          badgeStatus.className = 'badge-status error';
+          badgeStatus.style.background = 'rgba(239, 68, 68, 0.2)';
+          badgeStatus.style.borderColor = '#ef4444';
+          badgeStatus.style.color = '#ef4444';
+          statusText.textContent = 'Lỗi tìm kiếm';
+          if (batchProgressEl) {
+            batchProgressEl.innerHTML = `<span style="color:#ef4444; font-weight:600;">⚠️ ${escapeHTML(message || 'Lỗi quét Ads')}</span> <button type="button" id="btn-open-fb-login" style="margin-left:8px; padding:3px 10px; font-size:11px; font-weight:bold; background:#1877f2; color:#fff; border:none; border-radius:4px; cursor:pointer;">Mở Facebook Ads Library</button>`;
+            const btnOpen = document.getElementById('btn-open-fb-login');
+            if (btnOpen) {
+              btnOpen.addEventListener('click', () => {
+                if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.create) {
+                  chrome.tabs.create({ url: 'https://www.facebook.com/ads/library/?country=US' });
+                } else {
+                  window.open('https://www.facebook.com/ads/library/?country=US', '_blank');
+                }
+              });
+            }
+          }
+          if (progressBar) {
+            progressBar.style.width = '100%';
+            progressBar.style.background = '#ef4444';
+          }
           if (btnStart) btnStart.style.display = 'flex';
           if (btnStop) btnStop.style.display = 'none';
         } else {
@@ -2105,9 +2268,58 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    if (selectStartDate) {
+      selectStartDate.addEventListener('change', () => {
+        if (selectStartDate.value === 'CUSTOM') {
+          if (customDateWrapper) customDateWrapper.style.display = 'flex';
+          if (inputCustomDate) inputCustomDate.focus();
+        } else {
+          if (customDateWrapper) customDateWrapper.style.display = 'none';
+        }
+      });
+    }
+
+    if (btnClearStartDate) {
+      btnClearStartDate.addEventListener('click', () => {
+        if (selectStartDate) selectStartDate.value = 'ALL';
+        if (inputCustomDate) inputCustomDate.value = '';
+        if (customDateWrapper) customDateWrapper.style.display = 'none';
+      });
+    }
+
+    // ── Minea Quick Check Active vs Total Button Handler ─────────────
+    if (btnCheckActiveTotal) {
+      btnCheckActiveTotal.addEventListener('click', () => {
+        const params = getSearchParams();
+        if (!params.keyword) {
+          alert('Vui lòng nhập từ khóa tìm kiếm hoặc tên Page trước khi Check Active / Total!');
+          if (inputKeyword) inputKeyword.focus();
+          return;
+        }
+
+        updateMineaCounterUI({ status: 'LOADING' });
+
+        chrome.runtime.sendMessage({
+          action: 'FETCH_ACTIVE_VS_TOTAL',
+          payload: params
+        }, (res) => {
+          if (chrome.runtime.lastError) {
+            console.warn('FETCH_ACTIVE_VS_TOTAL warning:', chrome.runtime.lastError.message);
+            return;
+          }
+          if (res && res.success && res.data) {
+            updateMineaCounterUI({ status: 'SUCCESS', ...res.data });
+          } else if (res && !res.success) {
+            updateMineaCounterUI({ status: 'ERROR', error: res.error || 'Lỗi đo camp' });
+          }
+        });
+      });
+    }
+
     // ── Search Button Handler ────────────────────────────────────────
     if (btnStart) {
       btnStart.addEventListener('click', () => {
+        if (findAdsState.isSearching) return;
         const params = getSearchParams();
         if (!params.keyword) {
           alert('Vui lòng nhập từ khóa tìm kiếm (ví dụ: DallasWind US)!');
@@ -2120,8 +2332,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         findAdsState.isSearching = true;
         updateProgressUI('SEARCHING', 0, 0, 'Đang gửi truy vấn tới Facebook Ads Library...');
+        updateMineaCounterUI({ status: 'LOADING' });
 
-        // Dispatch action to background service worker
+        // Dispatch action to background service worker (single dispatch)
         chrome.runtime.sendMessage({
           action: 'FETCH_ADS_SEARCH',
           payload: params
@@ -2130,12 +2343,6 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn('FETCH_ADS_SEARCH runtime warning:', chrome.runtime.lastError.message);
           }
         });
-
-        // Also dispatch FIND_ADS_START alias for backwards/cross-module compatibility
-        chrome.runtime.sendMessage({
-          action: 'FIND_ADS_START',
-          payload: params
-        }, () => {});
       });
     }
 
@@ -2383,9 +2590,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const { parsedCount, totalCount, statusText: msg } = message.payload || {};
         updateProgressUI('SEARCHING', parsedCount, totalCount, msg);
       } else if (message.action === 'FIND_ADS_COMPLETED') {
-        const { totalParsed } = message.payload || {};
+        const { totalParsed, totalFound } = message.payload || {};
         findAdsState.isSearching = false;
-        updateProgressUI('COMPLETED', totalParsed || findAdsState.ads.length, totalParsed || findAdsState.ads.length, 'Thu thập hoàn tất 100%');
+        const preservedTotal = totalFound || findAdsState.totalFound || totalParsed || findAdsState.ads.length;
+        updateProgressUI('COMPLETED', totalParsed || findAdsState.ads.length, preservedTotal, 'Thu thập hoàn tất 100%');
       } else if (message.action === 'INOTE_SAVE_RESULT') {
         const { success, noteUrl, noteId } = message.payload || {};
         if (success && noteUrl) {
@@ -2398,6 +2606,8 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           copyText(noteUrl);
         }
+      } else if (message.action === 'ACTIVE_VS_TOTAL_UPDATE') {
+        updateMineaCounterUI(message.payload || {});
       }
     });
 
@@ -2406,6 +2616,10 @@ document.addEventListener('DOMContentLoaded', () => {
       state: findAdsState,
       getSearchParams,
       updateProgressUI,
+      updateMineaCounterUI,
+      smartRound,
+      formatNumberWithoutDecimals,
+      formatNumberCompact,
       renderAdCard,
       formatAdToInoteText,
       formatAllAdsToInoteText,

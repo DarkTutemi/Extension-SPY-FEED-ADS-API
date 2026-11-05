@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extension-SPY-FEED-ADS-API — Complete Call Flow &amp; Architecture Documentation</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --err: #f87171; --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 2.4rem; margin-bottom: 8px; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { font-size: 1.7rem; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.25rem; margin: 32px 0 12px; color: var(--accent); }
+h4 { font-size: 1.05rem; margin: 20px 0 8px; color: var(--warn); }
+p { margin: 8px 0; color: var(--muted); }
+.subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 32px; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; overflow-x: auto; position: relative; }
+.mermaid.is-enhanced { padding: 0; overflow: hidden; min-height: 260px; }
+.mermaid-viewport { padding: 54px 24px 24px; overflow: hidden; cursor: grab; touch-action: none; min-height: 260px; }
+.mermaid-viewport.is-dragging { cursor: grabbing; }
+.mermaid-viewport svg { max-width: none !important; height: auto; transform-origin: 0 0; transition: transform 120ms ease; }
+.mermaid-toolbar { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 6px; background: rgba(15,23,42,0.92); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+.mermaid-toolbar button, .mermaid-toolbar .zoom-level { height: 28px; min-width: 32px; border: 1px solid var(--border); border-radius: 6px; background: #1e293b; color: var(--text); font: 600 0.78rem system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.mermaid-toolbar button { cursor: pointer; }
+.mermaid-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+.mermaid-toolbar .zoom-level { min-width: 52px; color: var(--muted); background: transparent; }
+.call-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+.call-table th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 14px; border: 1px solid var(--border); }
+.call-table td { padding: 8px 14px; border: 1px solid var(--border); vertical-align: top; }
+.call-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.tag-async { background: #7c3aed33; color: #a78bfa; }
+.tag-class { background: #05966933; color: var(--ok); }
+.tag-func { background: #2563eb33; color: var(--accent); }
+.tag-cmd { background: #d9770633; color: var(--warn); }
+.tag-endpoint { background: #dc262633; color: var(--err); }
+.tag-hook { background: #db277733; color: #f472b6; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 16px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+.arrow-chain { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: var(--accent); padding: 10px; background: rgba(56,189,248,0.06); border-radius: 6px; }
+code { font-family: 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; }
+ul, ol { margin: 8px 0 8px 24px; color: var(--muted); }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+.nav { position: sticky; top: 0; background: var(--bg); z-index: 10; padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.9rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+@media (max-width: 768px) { .container { padding: 16px; } h1 { font-size: 1.8rem; } }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Extension-SPY-FEED-ADS-API — Complete Call Flow &amp; Architecture Documentation</h1>
+<p class="subtitle">Generated from graphify knowledge graph: 248 nodes, 410 edges, 12 communities. Commit: 52f0980</p>
+
+<div class="nav">
+    <a href="#overview">Architecture Overview</a>
+    <a href="#outputs-docs">Outputs &amp; Docs</a>
+    <a href="#ingest-cache-update">Ingestion &amp; Updates</a>
+    <a href="#serve-api">Serving API</a>
+    <a href="#tests-fixtures">Tests &amp; Fixtures</a>
+    <a href="#7-step-super-buyer-store-actor">7-Step Super-Buyer Store Actor</a>
+    <a href="#gemini-vision-deepseek-ai-helper">Gemini Vision &amp; DeepSeek AI Helper</a>
+    <a href="#main-world-fetch-xhr-graphql-sniffer">Main-World Fetch/XHR GraphQL Sniffer</a>
+</div>
+
+<!-- ====== Architecture Overview ====== -->
+<h2 id="overview">1. Architecture Overview</h2>
+
+<div class="mermaid">
+
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>24 nodes</small>")
+    class OUTPUTS_DOCS_ED82387C module;
+    INGEST_CACHE_UPDATE_FF457338("Ingestion &amp; Updates<br/><small>76 nodes</small>")
+    class INGEST_CACHE_UPDATE_FF457338 module;
+    SERVE_API_35EC8E86("Serving API<br/><small>73 nodes</small>")
+    class SERVE_API_35EC8E86 module;
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>49 nodes</small>")
+    class TESTS_FIXTURES_B84B1DCC module;
+    SECTION_7_STEP_SUPER_BUYER_STORE_ACTOR_BC6A7109("7-Step Super-Buyer Store Actor<br/><small>17 nodes</small>")
+    class SECTION_7_STEP_SUPER_BUYER_STORE_ACTOR_BC6A7109 module;
+    GEMINI_VISION_DEEPSEEK_AI_HELPER_CA9A0788("Gemini Vision &amp; DeepSeek AI Helper<br/><small>8 nodes</small>")
+    class GEMINI_VISION_DEEPSEEK_AI_HELPER_CA9A0788 module;
+    MAIN_WORLD_FETCH_XHR_GRAPHQL_SNIFFER_3975A6A5("Main-World Fetch/XHR GraphQL Sniffer<br/><small>1 nodes</small>")
+    class MAIN_WORLD_FETCH_XHR_GRAPHQL_SNIFFER_3975A6A5 module;
+    TESTS_FIXTURES_B84B1DCC -->|calls x4| SERVE_API_35EC8E86
+    OUTPUTS_DOCS_ED82387C -->|calls x2| SERVE_API_35EC8E86
+    TESTS_FIXTURES_B84B1DCC -->|imports x2| INGEST_CACHE_UPDATE_FF457338
+    INGEST_CACHE_UPDATE_FF457338 -->|contains x2| OUTPUTS_DOCS_ED82387C
+    SERVE_API_35EC8E86 -->|implements| INGEST_CACHE_UPDATE_FF457338
+    INGEST_CACHE_UPDATE_FF457338 -->|calls| SECTION_7_STEP_SUPER_BUYER_STORE_ACTOR_BC6A7109
+    OUTPUTS_DOCS_ED82387C -->|calls| TESTS_FIXTURES_B84B1DCC
+    OUTPUTS_DOCS_ED82387C -->|calls| INGEST_CACHE_UPDATE_FF457338
+    SECTION_7_STEP_SUPER_BUYER_STORE_ACTOR_BC6A7109 -->|calls| GEMINI_VISION_DEEPSEEK_AI_HELPER_CA9A0788
+    INGEST_CACHE_UPDATE_FF457338 -->|contains| TESTS_FIXTURES_B84B1DCC
+    INGEST_CACHE_UPDATE_FF457338 -->|contains| SERVE_API_35EC8E86
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h4>Architecture Layers</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
+      <tr><td>Outputs &amp; Docs</td><td>24</td><td><code>6</code></td></tr><tr><td>Ingestion &amp; Updates</td><td>76</td><td><code>2, 3, 4</code></td></tr><tr><td>Serving API</td><td>73</td><td><code>0, 5, 9</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>49</td><td><code>1, 7</code></td></tr><tr><td>7-Step Super-Buyer Store Actor</td><td>17</td><td><code>8</code></td></tr><tr><td>Gemini Vision &amp; DeepSeek AI Helper</td><td>8</td><td><code>10</code></td></tr><tr><td>Main-World Fetch/XHR GraphQL Sniffer</td><td>1</td><td><code>11</code></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Core Flow</h4>
+    <div class="arrow-chain">Main-World Fetch/XHR GraphQL Sniffer -&gt; Outputs &amp; Docs -&gt; Serving API -&gt; Ingestion &amp; Updates -&gt; Tests &amp; Fixtures -&gt; 7-Step Super-Buyer Store Actor -&gt; Gemini Vision &amp; DeepSeek AI Helper</div>
+  </div>
+</div>
+<div class="grid">
+  <div class="card">
+    <h4>Graph Report Highlights</h4>
+    <ul>
+      <li>248 nodes · 410 edges · 12 communities (10 shown, 2 thin omitted)</li>
+      <li>Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 20 edges (avg confidence: 0.88)</li>
+      <li>Token cost: 18,500 input · 4,200 output</li>
+      <li>1. `AdsLibraryGraphQLService` - 22 edges</li>
+      <li>2. `initFindAdsTab()` - 22 edges</li>
+      <li>3. `runMasterStoreFlow()` - 11 edges</li>
+    </ul>
+  </div>
+</div>
+<hr>
+<!-- ====== 2. Outputs & Docs ====== -->
+<h2 id="outputs-docs">2. Outputs &amp; Docs</h2>
+<p>Outputs &amp; Docs groups implementation around extension, sidepaneljs, ads, sidepanelhtml, mostly in extension/sidepanel.js, extension/sidepanel.html. This section covers 24 nodes and 38 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Outputs &amp; Docs (24 nodes, 38 edges)
+    extension_sidepanel_initfindadstab_renderadcard_c99a2b06("renderAdCard()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_updatemineaco_07cb8b5e("updateMineaCounterUI()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_formatalladst_090ba88c("formatAllAdsToInoteText()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_clearresults_d088c347("clearResults()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_getsearchpara_3a917c6a("getSearchParams()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_handleinotecr_13d3227d("handleInoteCreated()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_updateprogres_3efb5335("updateProgressUI()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_getexportform_7a724c59("getExportFormatMode()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_formatadtoino_684213f3("formatAdToInoteText()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_getel_e365ccc7("getEl()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_calculatepast_34a5be42("calculatePastDate()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_copytext_19664b8e("copyText()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_safehtml_e7db9665("safeHtml()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_smartround_453e94db("smartRound()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_formatnumberw_45ff7bb5("formatNumberWithoutDecimals()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_formatnumberc_b9b3ba9d("formatNumberCompact()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_1861479b("initFindAdsTab()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_updatesearcht_87a0826d("updateSearchTypeBadge()<br/><small>extension/sidepanel.js</small>")
+    extension_sidepanel_initfindadstab_clearresults_d088c347 -->|calls| extension_sidepanel_initfindadstab_updateprogres_3efb5335
+    extension_sidepanel_initfindadstab_formatalladst_090ba88c -->|calls| extension_sidepanel_initfindadstab_getexportform_7a724c59
+    extension_sidepanel_initfindadstab_formatalladst_090ba88c -->|calls| extension_sidepanel_initfindadstab_formatadtoino_684213f3
+    extension_sidepanel_initfindadstab_getexportform_7a724c59 -->|calls| extension_sidepanel_initfindadstab_getel_e365ccc7
+    extension_sidepanel_initfindadstab_getsearchpara_3a917c6a -->|calls| extension_sidepanel_initfindadstab_calculatepast_34a5be42
+    extension_sidepanel_initfindadstab_handleinotecr_13d3227d -->|calls| extension_sidepanel_initfindadstab_copytext_19664b8e
+    extension_sidepanel_initfindadstab_renderadcard_c99a2b06 -->|calls| extension_sidepanel_initfindadstab_safehtml_e7db9665
+    extension_sidepanel_initfindadstab_renderadcard_c99a2b06 -->|calls| extension_sidepanel_initfindadstab_formatadtoino_684213f3
+    extension_sidepanel_initfindadstab_renderadcard_c99a2b06 -->|calls| extension_sidepanel_initfindadstab_copytext_19664b8e
+    extension_sidepanel_initfindadstab_updatemineaco_07cb8b5e -->|calls| extension_sidepanel_initfindadstab_smartround_453e94db
+    extension_sidepanel_initfindadstab_updatemineaco_07cb8b5e -->|calls| extension_sidepanel_initfindadstab_formatnumberw_45ff7bb5
+    extension_sidepanel_initfindadstab_updatemineaco_07cb8b5e -->|calls| extension_sidepanel_initfindadstab_formatnumberc_b9b3ba9d
+    %% Omitted for readability: 6 nodes, 0 edges
+    class extension_sidepanel_initfindadstab_renderadcard_c99a2b06 function;
+    class extension_sidepanel_initfindadstab_updatemineaco_07cb8b5e function;
+    class extension_sidepanel_initfindadstab_formatalladst_090ba88c function;
+    class extension_sidepanel_initfindadstab_clearresults_d088c347 function;
+    class extension_sidepanel_initfindadstab_getsearchpara_3a917c6a function;
+    class extension_sidepanel_initfindadstab_handleinotecr_13d3227d function;
+    class extension_sidepanel_initfindadstab_updateprogres_3efb5335 function;
+    class extension_sidepanel_initfindadstab_getexportform_7a724c59 function;
+    class extension_sidepanel_initfindadstab_formatadtoino_684213f3 function;
+    class extension_sidepanel_initfindadstab_getel_e365ccc7 function;
+    class extension_sidepanel_initfindadstab_calculatepast_34a5be42 function;
+    class extension_sidepanel_initfindadstab_copytext_19664b8e function;
+    class extension_sidepanel_initfindadstab_safehtml_e7db9665 function;
+    class extension_sidepanel_initfindadstab_smartround_453e94db function;
+    class extension_sidepanel_initfindadstab_formatnumberw_45ff7bb5 function;
+    class extension_sidepanel_initfindadstab_formatnumberc_b9b3ba9d function;
+    class extension_sidepanel_initfindadstab_1861479b function;
+    class extension_sidepanel_initfindadstab_updatesearcht_87a0826d function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>createNote()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>fetchActiveVsTotalCounts()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>formatAdToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+4 more</td>
+  <td>initFindAdsTab() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>calculatePastDate()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>getSearchParams()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>calculatePastDate() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>clearResults()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>updateProgressUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>clearResults() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>copyText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleInoteCreated()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>renderAdCard()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>copyText() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>formatAdToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>formatAllAdsToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>renderAdCard()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>formatAdToInoteText() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>formatAllAdsToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>formatAdToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>getExportFormatMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>formatAllAdsToInoteText() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>formatNumberCompact()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateMineaCounterUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>formatNumberCompact() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>formatNumberWithoutDecimals()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateMineaCounterUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>formatNumberWithoutDecimals() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>getEl()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>getExportFormatMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>getEl() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>getExportFormatMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>formatAllAdsToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>getEl()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>getSearchParams()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>calculatePastDate()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>getSearchParams() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>handleInoteCreated()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>copyText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>handleInoteCreated() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>renderAdCard()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>copyText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>formatAdToInoteText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>safeHtml()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>renderAdCard() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>safeHtml()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>renderAdCard()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>smartRound()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateMineaCounterUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>smartRound() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>updateMineaCounterUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>formatNumberCompact()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>formatNumberWithoutDecimals()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>smartRound()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>updateMineaCounterUI() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>updateProgressUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>clearResults()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>escapeHTML()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>updateProgressUI() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>updateSearchTypeBadge()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>updateSearchTypeBadge() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>#find-ads-start-preset-select (On or After 3/6/12/15/18/24 Months Dropdown)</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing #find-ads-start-preset-select (On or After 3/6/12/15/18/24 Months Dropdown).</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>#find-ads-export-inote-btn (Export Ads to inote.net UI)</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing #find-ads-export-inote-btn (Export Ads to inote.net UI).</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>#minea-active-total-box (Minea Active vs Total Camp &amp; Ratio % UI)</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing #minea-active-total-box (Minea Active vs Total Camp &amp; Ratio % UI).</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>#view-find-ads (Facebook Ads Library Search Tab UI)</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing #view-find-ads (Facebook Ads Library Search Tab UI).</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>Rationale: Minea Active vs Total Camp Ratio bar inside #find-ads-filter-body</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Rationale: Minea Active vs Total Camp Ratio bar inside #find-ads-filter-body.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>Rationale: Preset Month Dropdown (3/6/12/15/18/24M) synced with native date input</code><br><small style="color:var(--muted)">extension/sidepanel.html</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Rationale: Preset Month Dropdown (3/6/12/15/18/24M) synced with native date input.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/sidepanel.js</code></td><td>18 nodes</td></tr>
+<tr><td><code>extension/sidepanel.html</code></td><td>6 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x16, calls x12, indirect call x4, references x4. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 3. Ingestion & Updates ====== -->
+<h2 id="ingest-cache-update">3. Ingestion &amp; Updates</h2>
+<p>Ingestion &amp; Updates groups implementation around extension, sidepaneljs, manifestjson, backgroundjs, mostly in extension/sidepanel.js, extension/manifest.json, extension/background.js. This section covers 76 nodes and 115 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Ingestion &amp; Updates (76 nodes, 115 edges)
+    subgraph ingest_cache_update_extension_sidepanel_js_24e3d5e4["extension/sidepanel.js"]
+        extension_sidepanel_init_24a82281("init()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_toggleautoscrollmode_cbf3bb14("toggleAutoScrollMode()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_processnextinotequeueitem_0ae73aa0("processNextInoteQueueItem()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_scheduleresumeafter5s_3688e89f("scheduleResumeAfter5s()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_onmouseinteractiondetected_407f1ba2("onMouseInteractionDetected()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_createadcardelement_945e585d("createAdCardElement()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_escapehtml_27733171("escapeHTML()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_createlogcardelement_d4b7918c("createLogCardElement()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_getinotelinksfromtextarea_8646e8ef("getInoteLinksFromTextarea()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_classifylink_571708e6("classifyLink()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_updatescanbuttonui_0c47ac3d("updateScanButtonUI()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_updatestatsui_76608b38("updateStatsUI()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_updateexclusionbadgeui_1e670f75("updateExclusionBadgeUI()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_updateautoscrollbadgeui_ecf2a741("updateAutoScrollBadgeUI()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_renderadslist_5a080256("renderAdsList()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_renderlogslist_43148028("renderLogsList()<br/><small>extension/sidepanel.js</small>")
+        extension_sidepanel_openexclusionmodal_c4ab4f2a("openExclusionModal()<br/><small>extension/sidepanel.js</small>")
+    end
+    extension_background_runwarmuptab_doinject_findt_1fdba29a("findTargetReactionButton()<br/><small>extension/background.js</small>")
+    extension_sidepanel_createadcardelement_945e585d -->|calls| extension_sidepanel_escapehtml_27733171
+    extension_sidepanel_createlogcardelement_d4b7918c -->|calls| extension_sidepanel_escapehtml_27733171
+    extension_sidepanel_getinotelinksfromtextarea_8646e8ef -->|calls| extension_sidepanel_classifylink_571708e6
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_updatescanbuttonui_0c47ac3d
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_updatestatsui_76608b38
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_updateexclusionbadgeui_1e670f75
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_updateautoscrollbadgeui_ecf2a741
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_renderadslist_5a080256
+    extension_sidepanel_init_24a82281 -->|calls| extension_sidepanel_renderlogslist_43148028
+    extension_sidepanel_onmouseinteractiondetected_407f1ba2 -->|calls| extension_sidepanel_updateautoscrollbadgeui_ecf2a741
+    extension_sidepanel_onmouseinteractiondetected_407f1ba2 -->|calls| extension_sidepanel_scheduleresumeafter5s_3688e89f
+    extension_sidepanel_openexclusionmodal_c4ab4f2a -->|calls| extension_sidepanel_updateexclusionbadgeui_1e670f75
+    extension_sidepanel_renderadslist_5a080256 -->|calls| extension_sidepanel_createadcardelement_945e585d
+    extension_sidepanel_renderlogslist_43148028 -->|calls| extension_sidepanel_createlogcardelement_d4b7918c
+    extension_sidepanel_scheduleresumeafter5s_3688e89f -->|calls| extension_sidepanel_updateautoscrollbadgeui_ecf2a741
+    extension_sidepanel_toggleautoscrollmode_cbf3bb14 -->|calls| extension_sidepanel_updateautoscrollbadgeui_ecf2a741
+    extension_sidepanel_processnextinotequeueitem_0ae73aa0 -->|calls| extension_sidepanel_escapehtml_27733171
+    %% Omitted for readability: 58 nodes, 0 edges
+    class extension_sidepanel_init_24a82281 function;
+    class extension_sidepanel_toggleautoscrollmode_cbf3bb14 function;
+    class extension_sidepanel_processnextinotequeueitem_0ae73aa0 function;
+    class extension_sidepanel_scheduleresumeafter5s_3688e89f function;
+    class extension_sidepanel_onmouseinteractiondetected_407f1ba2 function;
+    class extension_sidepanel_createadcardelement_945e585d function;
+    class extension_sidepanel_escapehtml_27733171 function;
+    class extension_sidepanel_createlogcardelement_d4b7918c function;
+    class extension_sidepanel_getinotelinksfromtextarea_8646e8ef function;
+    class extension_sidepanel_classifylink_571708e6 function;
+    class extension_sidepanel_updatescanbuttonui_0c47ac3d function;
+    class extension_sidepanel_updatestatsui_76608b38 function;
+    class extension_sidepanel_updateexclusionbadgeui_1e670f75 function;
+    class extension_sidepanel_updateautoscrollbadgeui_ecf2a741 function;
+    class extension_sidepanel_renderadslist_5a080256 function;
+    class extension_sidepanel_renderlogslist_43148028 function;
+    class extension_sidepanel_openexclusionmodal_c4ab4f2a function;
+    class extension_background_runwarmuptab_doinject_findt_1fdba29a function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>classifyLink()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>getInoteLinksFromTextarea()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>classifyLink() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>closeExclusionModal()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>closeExclusionModal() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>createAdCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>renderAdsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>escapeHTML()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>createAdCardElement() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>createLogCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>renderLogsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>escapeHTML()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>createLogCardElement() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>escapeHTML()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createAdCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>createLogCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>processNextInoteQueueItem()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>exportLogFileText()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>getInoteLinksFromTextarea()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>updateInoteBadges()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>classifyLink()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>getInoteLinksFromTextarea() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>renderAdsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>renderLogsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateAutoScrollBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+3 more</td>
+  <td>init() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>onMouseInteractionDetected()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>scheduleResumeAfter5s()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateAutoScrollBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>onMouseInteractionDetected() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>openExclusionModal()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>updateExclusionBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>openExclusionModal() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>performAutoScrollStep()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>scheduleResumeAfter5s()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>startAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>toggleAutoScrollMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>performAutoScrollStep() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>renderAdsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>createAdCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>renderAdsList() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>renderLogsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>createLogCardElement()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateLogFilterPillCounts()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>renderLogsList() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>scheduleResumeAfter5s()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>onMouseInteractionDetected()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>performAutoScrollStep()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>startAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateAutoScrollBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>scheduleResumeAfter5s() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>startAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>scheduleResumeAfter5s()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>toggleAutoScrollMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>performAutoScrollStep()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>stopAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>updateAutoScrollBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>startAutoScrollLoop() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>stopAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>startAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>toggleAutoScrollMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>stopAutoScrollLoop() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>stopInoteQueue()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>stopInoteQueue() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>toggleAutoScrollMode()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>performAutoScrollStep()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>startAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>stopAutoScrollLoop()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+1 more</td>
+  <td>toggleAutoScrollMode() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>updateAutoScrollBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>onMouseInteractionDetected()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>scheduleResumeAfter5s()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+2 more</td>
+  <td>No direct outbound edge</td>
+  <td>updateAutoScrollBadgeUI() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>updateExclusionBadgeUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>openExclusionModal()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>updateExclusionBadgeUI() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>updateInoteBadges()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><code>getInoteLinksFromTextarea()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>updateInoteBadges() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>updateLogFilterPillCounts()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>renderLogsList()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>updateLogFilterPillCounts() node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>updateScanButtonUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Starts scanning or handles scan status.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>updateStatsUI()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>init()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>sidepanel.js</code><br><small style="color:var(--muted)">extension/sidepanel.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>closeExclusionModal()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>openExclusionModal()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>stopInoteQueue()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br>+2 more</td>
+  <td>sidepanel.js node in extension/sidepanel.js.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>5-Criteria Dropship Video Ad Filter (External Store, Video, Unverified, MinLikes, Anti-Buff Ratio)</code><br><small style="color:var(--muted)">extension/Video-Ads-Hunter.md</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>5-Criteria Dropship Video Ad Filter (External Store, Video, Unverified, MinLikes, Anti-Buff Ratio) node in extension/Video-Ads-Hunter.md.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>Video-Ads-Hunter.md (5-Criteria Audit Filter &amp; Side Panel Architecture)</code><br><small style="color:var(--muted)">extension/Video-Ads-Hunter.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Video-Ads-Hunter.md (5-Criteria Audit Filter &amp; Side Panel Architecture).</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>manifest.json</code><br><small style="color:var(--muted)">extension/manifest.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>manifest.json node in extension/manifest.json.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>action</code><br><small style="color:var(--muted)">extension/manifest.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>action node in extension/manifest.json.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>default_icon</code><br><small style="color:var(--muted)">extension/manifest.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>default_icon node in extension/manifest.json.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/sidepanel.js</code></td><td>26 nodes</td></tr>
+<tr><td><code>extension/manifest.json</code></td><td>23 nodes</td></tr>
+<tr><td><code>extension/background.js</code></td><td>17 nodes</td></tr>
+<tr><td><code>extension/REACTION_MECHANISM.md</code></td><td>3 nodes</td></tr>
+<tr><td><code>extension/sidepanel.html</code></td><td>3 nodes</td></tr>
+<tr><td><code>extension/Video-Ads-Hunter.md</code></td><td>2 nodes</td></tr>
+<tr><td><code>AGENTS.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>extension/README.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x62, calls x37, references x6, indirect call x5. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 4. Serving API ====== -->
+<h2 id="serve-api">4. Serving API</h2>
+<p>Serving API groups implementation around extension, content, scriptjs, backgroundjs, mostly in extension/content_script.js, extension/background.js, run_facebook_ads_automation.py. This section covers 73 nodes and 129 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Serving API (73 nodes, 129 edges)
+    subgraph serve_api_extension_background_js_54e3b7fc["extension/background.js"]
+        extension_background_adslibrarygraphqlservice_b11d3116("AdsLibraryGraphQLService<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_se_65a05040("searchAndPaginateAll()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_fe_fad124d4("fetchCountWithRetry()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_fe_62298544("fetchActiveVsTotalCounts()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_sm_70434590("smartRound()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_fo_cbbe881c("formatNumberWithoutDecimals()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_fo_9e8c74aa("formatNumberCompact()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_bu_cc72a868("buildAdsLibraryUrlWithStatus()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_co_dbc3a7a1("constructor()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_ge_6692bf88("generateUUID()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_en_f80d9694("ensureAuthentication()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_bu_835388e9("buildVariables()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_bu_001f1d23("buildRequestBody()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_pa_9dc32c1f("parseRelayResponse()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_ex_eaf09f1e("extractVideoDuration()<br/><small>extension/background.js</small>")
+        extension_background_adslibrarygraphqlservice_ex_1d82fcb3("extractFullCaption()<br/><small>extension/background.js</small>")
+    end
+    extension_content_script_evaluategraphqlstory_240f30f0("evaluateGraphqlStory()<br/><small>extension/content_script.js</small>")
+    run_facebook_ads_automation_6de32c8b("run_facebook_ads_automation.py")
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_sm_70434590
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_fo_cbbe881c
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_fo_9e8c74aa
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_bu_cc72a868
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_fe_fad124d4
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_fe_62298544
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_co_dbc3a7a1
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_ge_6692bf88
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_en_f80d9694
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_bu_835388e9
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_bu_001f1d23
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_pa_9dc32c1f
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_ex_eaf09f1e
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_ex_1d82fcb3
+    extension_background_adslibrarygraphqlservice_b11d3116 -->|method| extension_background_adslibrarygraphqlservice_se_65a05040
+    extension_background_adslibrarygraphqlservice_bu_cc72a868 -->|calls| extension_background_adslibrarygraphqlservice_bu_835388e9
+    extension_background_adslibrarygraphqlservice_co_dbc3a7a1 -->|calls| extension_background_adslibrarygraphqlservice_ge_6692bf88
+    extension_background_adslibrarygraphqlservice_fe_62298544 -->|calls| extension_background_adslibrarygraphqlservice_en_f80d9694
+    extension_background_adslibrarygraphqlservice_fe_62298544 -->|calls| extension_background_adslibrarygraphqlservice_fe_fad124d4
+    extension_background_adslibrarygraphqlservice_fe_62298544 -->|calls| extension_background_adslibrarygraphqlservice_sm_70434590
+    extension_background_adslibrarygraphqlservice_fe_62298544 -->|calls| extension_background_adslibrarygraphqlservice_fo_cbbe881c
+    extension_background_adslibrarygraphqlservice_fe_62298544 -->|calls| extension_background_adslibrarygraphqlservice_fo_9e8c74aa
+    extension_background_adslibrarygraphqlservice_fe_fad124d4 -->|calls| extension_background_adslibrarygraphqlservice_bu_835388e9
+    extension_background_adslibrarygraphqlservice_fe_fad124d4 -->|calls| extension_background_adslibrarygraphqlservice_ge_6692bf88
+    %% Omitted for readability: 55 nodes, 8 edges
+    class extension_background_adslibrarygraphqlservice_b11d3116 klass;
+    class extension_background_adslibrarygraphqlservice_se_65a05040 function;
+    class extension_background_adslibrarygraphqlservice_fe_fad124d4 function;
+    class extension_background_adslibrarygraphqlservice_fe_62298544 function;
+    class extension_background_adslibrarygraphqlservice_sm_70434590 function;
+    class extension_background_adslibrarygraphqlservice_fo_cbbe881c function;
+    class extension_background_adslibrarygraphqlservice_fo_9e8c74aa function;
+    class extension_background_adslibrarygraphqlservice_bu_cc72a868 function;
+    class extension_background_adslibrarygraphqlservice_co_dbc3a7a1 function;
+    class extension_background_adslibrarygraphqlservice_ge_6692bf88 function;
+    class extension_background_adslibrarygraphqlservice_en_f80d9694 function;
+    class extension_background_adslibrarygraphqlservice_bu_835388e9 function;
+    class extension_background_adslibrarygraphqlservice_bu_001f1d23 function;
+    class extension_background_adslibrarygraphqlservice_pa_9dc32c1f function;
+    class extension_background_adslibrarygraphqlservice_ex_eaf09f1e function;
+    class extension_background_adslibrarygraphqlservice_ex_1d82fcb3 function;
+    class extension_content_script_evaluategraphqlstory_240f30f0 function;
+    class run_facebook_ads_automation_6de32c8b module;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>auditAndFilterAd()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><code>checkWarmupExclusion()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>auditAndFilterAd() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>checkWarmupExclusion()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>auditAndFilterAd()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>checkWarmupExclusion() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>cleanName()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>registerFeedStoryNode()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>cleanName() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>decodeRelayId()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>registerFeedStoryNode()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>resolveFbStoryUrl()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>decodeRelayId() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>auditAndFilterAd()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>cleanName()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>extractDataFromDomCard()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br>+3 more</td>
+  <td>Builds dependency relationships and graph data.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>extractDataFromDomCard()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><code>parseMetricNumber()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>extractDataFromDomCard() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>cleanChar()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>cleanCtaText()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>unscrambleGhlText()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>cleanChar() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>cleanCtaText()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>unscrambleGhlText()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><code>cleanChar()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>cleanCtaText() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>formatCta()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>formatCta() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>unscrambleGhlText()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>cleanChar()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>cleanCtaText()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>unscrambleGhlText() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>extractPostUrlFromDomCard()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>extractPostUrlFromDomCard() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>findDomCardByPageName()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Organizes documentation pages, navigation, or content lookup.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>injectMainWorldScript()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>injected.js</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td>injectMainWorldScript() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>isOrganicPostDom()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>isOrganicPostDom() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>parseMetricNumber()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>extractDataFromDomCard()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>parseMetricNumber() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>registerFeedStoryNode()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>evaluateGraphqlStory()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><code>cleanName()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>decodeRelayId()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>registerFeedStoryNode() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>resolveFbStoryUrl()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>decodeRelayId()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>resolveFbStoryUrl() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>runHybridLoop()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>simulatePhysicalScroll()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>runHybridLoop() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>scanDomAds()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runHybridLoop()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><code>auditAndFilterAd()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>cleanName()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br><code>extractDataFromDomCard()</code><br><small style="color:var(--muted)">extension/content_script.js</small><br>+2 more</td>
+  <td>Starts scanning or handles scan status.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>simulatePhysicalScroll()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runHybridLoop()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>simulatePhysicalScroll() node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>getDtsgToken()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>getDtsgToken() node in extension/injected.js.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>getUserId()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>getUserId() node in extension/injected.js.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>handleIncomingGraphQLText()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>send()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Builds dependency relationships and graph data.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>.send()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>handleIncomingGraphQLText()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td>.send() node in extension/injected.js.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>content_script.js</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>content_script.js node in extension/content_script.js.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>injected.js</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td><code>injectMainWorldScript()</code><br><small style="color:var(--muted)">extension/content_script.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>injected.js node in extension/injected.js.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>Post Taxonomy Matrix (P-01 Organic to P-05 Target Video Ad &amp; P-08 Boosted No Store)</code><br><small style="color:var(--muted)">extension/ADS_API_PLAYBOOK.md</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Post Taxonomy Matrix (P-01 Organic to P-05 Target Video Ad &amp; P-08 Boosted No Store) node in extension/ADS_API_PLAYBOOK.md.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>CometNewsFeedPaginationQuery + Smooth Physical Scroll Architecture</code><br><small style="color:var(--muted)">extension/Find-ads.md</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>CometNewsFeedPaginationQuery + Smooth Physical Scroll Architecture node in extension/Find-ads.md.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>ADS_API_PLAYBOOK.md (Post Taxonomy P-01..P-08 &amp; Comet DOM Fingerprints)</code><br><small style="color:var(--muted)">extension/ADS_API_PLAYBOOK.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing ADS_API_PLAYBOOK.md (Post Taxonomy P-01..P-08 &amp; Comet DOM Fingerprints).</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>Find-ads.md (Hybrid API Pagination &amp; Physical Scroll Specification)</code><br><small style="color:var(--muted)">extension/Find-ads.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Find-ads.md (Hybrid API Pagination &amp; Physical Scroll Specification).</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/content_script.js</code></td><td>21 nodes</td></tr>
+<tr><td><code>extension/background.js</code></td><td>19 nodes</td></tr>
+<tr><td><code>run_facebook_ads_automation.py</code></td><td>9 nodes</td></tr>
+<tr><td><code>extension/injected.js</code></td><td>5 nodes</td></tr>
+<tr><td><code>libary-API.md</code></td><td>5 nodes</td></tr>
+<tr><td><code>extension/ADS_API_PLAYBOOK.md</code></td><td>3 nodes</td></tr>
+<tr><td><code>extension/Find-ads.md</code></td><td>2 nodes</td></tr>
+<tr><td><code>extension/plane-test.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x50, contains x30, method x18, implements x10. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 5. Tests & Fixtures ====== -->
+<h2 id="tests-fixtures">5. Tests &amp; Fixtures</h2>
+<p>Tests &amp; Fixtures groups implementation around test, extension, validationjs, challenger, mostly in extension/test_m1_ui_validation.js, extension/test_challenger_stress_suite.js, extension/test_m2_m3_engine.js. This section covers 49 nodes and 60 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Tests &amp; Fixtures (49 nodes, 60 edges)
+    subgraph tests_fixtures_extension_test_challenger_stress_f9c81645["extension/test_challenger_stress_suite.js"]
+        extension_test_challenger_stress_suite_fe058609("test_challenger_stress_suite.js")
+        extension_test_challenger_stress_suite_runalltes_b114d663("runAllTests()<br/><small>extension/test_challenger_stress_suite.js</small>")
+        extension_test_challenger_stress_suite_testcase_94bd18fc("testCase()<br/><small>extension/test_challenger_stress_suite.js</small>")
+        extension_test_challenger_stress_suite_assert_a3d16321("assert<br/><small>extension/test_challenger_stress_suite.js</small>")
+        extension_test_challenger_stress_suite_safehtml_9bd91eff("safeHtml()<br/><small>extension/test_challenger_stress_suite.js</small>")
+    end
+    subgraph tests_fixtures_extension_background_js_9ae3b73d["extension/background.js"]
+        extension_background_inoteservice_aab0a983("InoteService<br/><small>extension/background.js</small>")
+        extension_background_inoteservice_formatad_84d7af78("formatAd()<br/><small>extension/background.js</small>")
+        extension_background_inoteservice_formatallads_837f2e93("formatAllAds()<br/><small>extension/background.js</small>")
+        extension_background_inoteservice_createnote_8c6b5dde("createNote()<br/><small>extension/background.js</small>")
+    end
+    subgraph tests_fixtures_extension_test_m2_m3_engine_js_d5f3ce5e["extension/test_m2_m3_engine.js"]
+        extension_test_m2_m3_engine_6aae6b26("test_m2_m3_engine.js")
+        extension_test_m2_m3_engine_runall_3878f373("runAll()<br/><small>extension/test_m2_m3_engine.js</small>")
+        extension_test_m2_m3_engine_assert_a2aa13fc("assert<br/><small>extension/test_m2_m3_engine.js</small>")
+        extension_test_m2_m3_engine_runstep_c76ee20b("runStep()<br/><small>extension/test_m2_m3_engine.js</small>")
+    end
+    subgraph tests_fixtures_External_generated_473753cb["External / generated"]
+        ref_fs_8204e0dd("ref_fs")
+        ref_path_6ea4f7de("ref_path")
+    end
+    subgraph tests_fixtures_test_empirical_verification_js_8c480d2a["test_empirical_verification.js"]
+        test_empirical_verification_abf31722("test_empirical_verification.js")
+        test_empirical_verification_runempiricalverifica_f576262d("runEmpiricalVerification()<br/><small>test_empirical_verification.js</small>")
+    end
+    extension_test_m1_ui_validation_010469de("test_m1_ui_validation.js")
+    extension_background_inoteservice_aab0a983 -->|method| extension_background_inoteservice_formatad_84d7af78
+    extension_background_inoteservice_aab0a983 -->|method| extension_background_inoteservice_formatallads_837f2e93
+    extension_background_inoteservice_aab0a983 -->|method| extension_background_inoteservice_createnote_8c6b5dde
+    extension_background_inoteservice_formatallads_837f2e93 -->|calls| extension_background_inoteservice_formatad_84d7af78
+    extension_test_challenger_stress_suite_runalltes_b114d663 -->|calls| extension_test_challenger_stress_suite_testcase_94bd18fc
+    extension_test_challenger_stress_suite_runalltes_b114d663 -->|calls| extension_test_challenger_stress_suite_assert_a3d16321
+    extension_test_challenger_stress_suite_runalltes_b114d663 -->|calls| extension_test_challenger_stress_suite_safehtml_9bd91eff
+    extension_test_m2_m3_engine_runall_3878f373 -->|calls| extension_test_m2_m3_engine_assert_a2aa13fc
+    extension_test_m2_m3_engine_runall_3878f373 -->|calls| extension_test_m2_m3_engine_runstep_c76ee20b
+    test_empirical_verification_runempiricalverifica_f576262d -->|calls| extension_background_inoteservice_formatallads_837f2e93
+    test_empirical_verification_runempiricalverifica_f576262d -->|calls| extension_background_inoteservice_formatad_84d7af78
+    extension_test_challenger_stress_suite_fe058609 -->|imports| ref_fs_8204e0dd
+    extension_test_challenger_stress_suite_fe058609 -->|imports| ref_path_6ea4f7de
+    extension_test_m2_m3_engine_6aae6b26 -->|imports| ref_fs_8204e0dd
+    extension_test_m2_m3_engine_6aae6b26 -->|imports| ref_path_6ea4f7de
+    test_empirical_verification_abf31722 -->|imports| extension_background_inoteservice_aab0a983
+    test_empirical_verification_abf31722 -->|imports| ref_fs_8204e0dd
+    test_empirical_verification_abf31722 -->|imports| ref_path_6ea4f7de
+    extension_test_m1_ui_validation_010469de -->|imports| ref_fs_8204e0dd
+    extension_test_m1_ui_validation_010469de -->|imports| ref_path_6ea4f7de
+    %% Omitted for readability: 31 nodes, 0 edges
+    class extension_test_challenger_stress_suite_fe058609 test;
+    class extension_test_challenger_stress_suite_runalltes_b114d663 test;
+    class extension_test_challenger_stress_suite_testcase_94bd18fc test;
+    class extension_test_challenger_stress_suite_assert_a3d16321 test;
+    class extension_test_challenger_stress_suite_safehtml_9bd91eff test;
+    class extension_background_inoteservice_aab0a983 klass;
+    class extension_background_inoteservice_formatad_84d7af78 function;
+    class extension_background_inoteservice_formatallads_837f2e93 function;
+    class extension_background_inoteservice_createnote_8c6b5dde function;
+    class extension_test_m2_m3_engine_6aae6b26 test;
+    class extension_test_m2_m3_engine_runall_3878f373 test;
+    class extension_test_m2_m3_engine_assert_a2aa13fc test;
+    class extension_test_m2_m3_engine_runstep_c76ee20b test;
+    class ref_fs_8204e0dd function;
+    class ref_path_6ea4f7de function;
+    class test_empirical_verification_abf31722 test;
+    class test_empirical_verification_runempiricalverifica_f576262d test;
+    class extension_test_m1_ui_validation_010469de test;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>InoteService</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>test_empirical_verification.js</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><code>createNote()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>formatAd()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>formatAllAds()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td>InoteService node in extension/background.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>.createNote()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>initFindAdsTab()</code><br><small style="color:var(--muted)">extension/sidepanel.js</small><br><code>InoteService</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.createNote() node in extension/background.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>.formatAd()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>formatAllAds()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>InoteService</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>runEmpiricalVerification()</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.formatAd() node in extension/background.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>.formatAllAds()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>InoteService</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>runEmpiricalVerification()</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><code>formatAd()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td>.formatAllAds() node in extension/background.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>createMockFetch()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>createMockFetch() node in extension/test_challenger_stress_suite.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>runAllTests()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>assert</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small><br><code>safeHtml()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small><br><code>testCase()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>safeHtml()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>runAllTests()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>testCase()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>runAllTests()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>runAll()</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>assert</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small><br><code>runStep()</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td>runAll() node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>runStep()</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>runAll()</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>runStep() node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>runEmpiricalVerification()</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>AdsLibraryGraphQLService</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>formatAd()</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>formatAllAds()</code><br><small style="color:var(--muted)">extension/background.js</small><br>+2 more</td>
+  <td>runEmpiricalVerification() node in test_empirical_verification.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>test_challenger_stress_suite.js</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>ref_assert</code><br><code>ref_fs</code><br><code>ref_path</code></td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>{ AdsLibraryGraphQLService, InoteService }</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Builds dependency relationships and graph data.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>assert</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>runAllTests()</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>assert node in extension/test_challenger_stress_suite.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>backgroundPath</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>backgroundPath node in extension/test_challenger_stress_suite.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>fs</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>fs node in extension/test_challenger_stress_suite.js.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>path</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>path node in extension/test_challenger_stress_suite.js.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>testLogs</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>test_m2_m3_engine.js</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>ref_assert</code><br><code>ref_fs</code><br><code>ref_path</code></td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>{ AdsLibraryGraphQLService, InoteService }</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Builds dependency relationships and graph data.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>assert</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td><code>runAll()</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>assert node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>backgroundPath</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>backgroundPath node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>fs</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>fs node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>path</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>path node in extension/test_m2_m3_engine.js.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>test_empirical_verification.js</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>AdsLibraryGraphQLService</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>background.js</code><br><small style="color:var(--muted)">extension/background.js</small><br><code>InoteService</code><br><small style="color:var(--muted)">extension/background.js</small><br>+2 more</td>
+  <td>Verifies imports, entry points, or version behavior.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>fs</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>fs node in test_empirical_verification.js.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>path</code><br><small style="color:var(--muted)">test_empirical_verification.js</small></td>
+  <td><span class="tag tag-func">Test</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>path node in test_empirical_verification.js.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>ref_assert</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-async">Async</span></td>
+  <td><code>test_challenger_stress_suite.js</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small><br><code>test_m2_m3_engine.js</code><br><small style="color:var(--muted)">extension/test_m2_m3_engine.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>ref_assert node in project.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>ref_fs</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>test_challenger_stress_suite.js</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small><br><code>test_empirical_verification.js</code><br><small style="color:var(--muted)">test_empirical_verification.js</small><br><code>test_m1_ui_validation.js</code><br><small style="color:var(--muted)">extension/test_m1_ui_validation.js</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>ref_fs node in project.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>ref_path</code><br><small style="color:var(--muted)"></small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>test_challenger_stress_suite.js</code><br><small style="color:var(--muted)">extension/test_challenger_stress_suite.js</small><br><code>test_empirical_verification.js</code><br><small style="color:var(--muted)">test_empirical_verification.js</small><br><code>test_m1_ui_validation.js</code><br><small style="color:var(--muted)">extension/test_m1_ui_validation.js</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>ref_path node in project.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/test_m1_ui_validation.js</code></td><td>19 nodes</td></tr>
+<tr><td><code>extension/test_challenger_stress_suite.js</code></td><td>11 nodes</td></tr>
+<tr><td><code>extension/test_m2_m3_engine.js</code></td><td>8 nodes</td></tr>
+<tr><td><code>extension/background.js</code></td><td>4 nodes</td></tr>
+<tr><td><code>test_empirical_verification.js</code></td><td>4 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x38, imports x10, calls x8, method x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 6. 7-Step Super-Buyer Store Actor ====== -->
+<h2 id="7-step-super-buyer-store-actor">6. 7-Step Super-Buyer Store Actor</h2>
+<p>7-Step Super-Buyer Store Actor groups implementation around extension, store, actorjs, manualmd, mostly in extension/store_actor.js, extension/manual.md. This section covers 17 nodes and 43 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: 7-Step Super-Buyer Store Actor (17 nodes, 43 edges)
+    subgraph node_7_step_super_buyer_store_actor_extension_st_c4d95fd8["extension/store_actor.js"]
+        extension_store_actor_runmasterstoreflow_33edc6dc("runMasterStoreFlow()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_simulatecreditcardpaymenta_e7c89796("simulateCreditCardPaymentAndCount10s()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_filluscustomershippinginfo_2dad336f("fillUSCustomerShippingInfo()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_simulatepaypalgatewayandco_08b4d73c("simulatePayPalGatewayAndCount10s()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_addtocartandinitiatechecko_fda144e8("addToCartAndInitiateCheckout()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_finalizeandclosestoretab_b67eea79("finalizeAndCloseStoreTab()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_reportprogress_e1d997bc("reportProgress()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_safeelementclick_326a632a("safeElementClick()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_detectstoreplatform_22fec4d3("detectStorePlatform()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_fillcreditcardfieldsontopa_5ed0c9e5("fillCreditCardFieldsOnTopAndSameOrigin()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_setcreditcardinputvalue_a85e791a("setCreditCardInputValue()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_setnativevalue_a6cc2559("setNativeValue()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_safesendmessage_3fc31ec7("safeSendMessage()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_simulatebrowseandpickvaria_23be2cbc("simulateBrowseAndPickVariant()<br/><small>extension/store_actor.js</small>")
+        extension_store_actor_a5c7151f("store_actor.js")
+    end
+    subgraph node_7_step_super_buyer_store_actor_extension_ma_8e3d4f75["extension/manual.md"]
+        extension_manual_super_buyer_7steps_63cd7711("7-Step Super-Buyer E-Commerce Pixel War...<br/><small>extension/manual.md</small>")
+        extension_manual_doc_0d73df5c("manual.md (Manual Tab: Inote Smart Disp...<br/><small>extension/manual.md</small>")
+    end
+    extension_store_actor_addtocartandinitiatechecko_fda144e8 -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_addtocartandinitiatechecko_fda144e8 -->|calls| extension_store_actor_safeelementclick_326a632a
+    extension_store_actor_detectstoreplatform_22fec4d3 -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_fillcreditcardfieldsontopa_5ed0c9e5 -->|calls| extension_store_actor_setcreditcardinputvalue_a85e791a
+    extension_store_actor_filluscustomershippinginfo_2dad336f -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_filluscustomershippinginfo_2dad336f -->|calls| extension_store_actor_setnativevalue_a6cc2559
+    extension_store_actor_filluscustomershippinginfo_2dad336f -->|calls| extension_store_actor_safeelementclick_326a632a
+    extension_store_actor_finalizeandclosestoretab_b67eea79 -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_finalizeandclosestoretab_b67eea79 -->|calls| extension_store_actor_safesendmessage_3fc31ec7
+    extension_store_actor_reportprogress_e1d997bc -->|calls| extension_store_actor_safesendmessage_3fc31ec7
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_detectstoreplatform_22fec4d3
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_simulatebrowseandpickvaria_23be2cbc
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_addtocartandinitiatechecko_fda144e8
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_filluscustomershippinginfo_2dad336f
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_simulatecreditcardpaymenta_e7c89796
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_simulatepaypalgatewayandco_08b4d73c
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_finalizeandclosestoretab_b67eea79
+    extension_store_actor_runmasterstoreflow_33edc6dc -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_simulatebrowseandpickvaria_23be2cbc -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_simulatebrowseandpickvaria_23be2cbc -->|calls| extension_store_actor_safeelementclick_326a632a
+    extension_store_actor_simulatecreditcardpaymenta_e7c89796 -->|calls| extension_store_actor_reportprogress_e1d997bc
+    extension_store_actor_simulatecreditcardpaymenta_e7c89796 -->|calls| extension_store_actor_safeelementclick_326a632a
+    extension_store_actor_simulatecreditcardpaymenta_e7c89796 -->|calls| extension_store_actor_fillcreditcardfieldsontopa_5ed0c9e5
+    extension_store_actor_simulatecreditcardpaymenta_e7c89796 -->|calls| extension_store_actor_safesendmessage_3fc31ec7
+    %% Omitted for readability: 0 nodes, 3 edges
+    class extension_store_actor_runmasterstoreflow_33edc6dc ui;
+    class extension_store_actor_simulatecreditcardpaymenta_e7c89796 function;
+    class extension_store_actor_filluscustomershippinginfo_2dad336f function;
+    class extension_store_actor_simulatepaypalgatewayandco_08b4d73c function;
+    class extension_store_actor_addtocartandinitiatechecko_fda144e8 function;
+    class extension_store_actor_finalizeandclosestoretab_b67eea79 ui;
+    class extension_store_actor_reportprogress_e1d997bc function;
+    class extension_store_actor_safeelementclick_326a632a entry;
+    class extension_store_actor_detectstoreplatform_22fec4d3 ui;
+    class extension_store_actor_fillcreditcardfieldsontopa_5ed0c9e5 function;
+    class extension_store_actor_setcreditcardinputvalue_a85e791a function;
+    class extension_store_actor_setnativevalue_a6cc2559 function;
+    class extension_store_actor_safesendmessage_3fc31ec7 function;
+    class extension_store_actor_simulatebrowseandpickvaria_23be2cbc function;
+    class extension_store_actor_a5c7151f ui;
+    class extension_manual_super_buyer_7steps_63cd7711 function;
+    class extension_manual_doc_0d73df5c concept;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>addToCartAndInitiateCheckout()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>addToCartAndInitiateCheckout() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>detectStorePlatform()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>detectStorePlatform() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>fillCreditCardFieldsOnTopAndSameOrigin()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>simulateCreditCardPaymentAndCount10s()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>setCreditCardInputValue()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>fillCreditCardFieldsOnTopAndSameOrigin() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>mapCheckoutFieldsWithDeepSeek()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+1 more</td>
+  <td>fillUSCustomerShippingInfo() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>finalizeAndCloseStoreTab()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeSendMessage()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>finalizeAndCloseStoreTab() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>addToCartAndInitiateCheckout()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>detectStorePlatform()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+5 more</td>
+  <td><code>safeSendMessage()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>reportProgress() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>triggerStoreFlow()</code><br><small style="color:var(--muted)">extension/background.js</small></td>
+  <td><code>addToCartAndInitiateCheckout()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>detectStorePlatform()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+5 more</td>
+  <td>runMasterStoreFlow() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-cmd">Entry</span></td>
+  <td><code>addToCartAndInitiateCheckout()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>simulateBrowseAndPickVariant()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+2 more</td>
+  <td>No direct outbound edge</td>
+  <td>safeElementClick() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>safeSendMessage()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>finalizeAndCloseStoreTab()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>simulateCreditCardPaymentAndCount10s()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>safeSendMessage() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>setCreditCardInputValue()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>fillCreditCardFieldsOnTopAndSameOrigin()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>setCreditCardInputValue() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>setNativeValue()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>setNativeValue() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>simulateBrowseAndPickVariant()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>simulateBrowseAndPickVariant() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>simulateCreditCardPaymentAndCount10s()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>fillCreditCardFieldsOnTopAndSameOrigin()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br>+1 more</td>
+  <td>simulateCreditCardPaymentAndCount10s() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>simulatePayPalGatewayAndCount10s()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>runMasterStoreFlow()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><code>reportProgress()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeElementClick()</code><br><small style="color:var(--muted)">extension/store_actor.js</small><br><code>safeSendMessage()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>simulatePayPalGatewayAndCount10s() node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>store_actor.js</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>store_actor.js node in extension/store_actor.js.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>7-Step Super-Buyer E-Commerce Pixel Warmup Flow (ViewContent -&gt; AddToCart -&gt; Checkout -&gt; PCI/PayPal)</code><br><small style="color:var(--muted)">extension/manual.md</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>7-Step Super-Buyer E-Commerce Pixel Warmup Flow (ViewContent -&gt; AddToCart -&gt; Checkout -&gt; PCI/PayPal) node in extension/manual.md.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>manual.md (Manual Tab: Inote Smart Dispatcher &amp; 7-Step Super-Buyer Pixel)</code><br><small style="color:var(--muted)">extension/manual.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing manual.md (Manual Tab: Inote Smart Dispatcher &amp; 7-Step Super-Buyer Pixel).</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/store_actor.js</code></td><td>15 nodes</td></tr>
+<tr><td><code>extension/manual.md</code></td><td>2 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x27, contains x15, implements x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 7. Gemini Vision & DeepSeek AI Helper ====== -->
+<h2 id="gemini-vision-deepseek-ai-helper">7. Gemini Vision &amp; DeepSeek AI Helper</h2>
+<p>Gemini Vision &amp; DeepSeek AI Helper groups implementation around helperjs, extension, aihelper, analyzeimagewithgemini, mostly in extension/ai_helper.js. This section covers 8 nodes and 8 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Gemini Vision &amp; DeepSeek AI Helper (8 nodes, 8 edges)
+    extension_ai_helper_aihelper_33037148("AIHelper<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_analyzeimagewithgem_da9a5314("analyzeImageWithGemini()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_constructor_aca0d204("constructor()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_solvecaptcha_9c1cc9fd("solveCaptcha()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_updateconfig_396874c8("updateConfig()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_getnextgeminikey_ccacfaf2("getNextGeminiKey()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_aihelper_mapcheckoutfieldswi_1fe331db("mapCheckoutFieldsWithDeepSeek()<br/><small>extension/ai_helper.js</small>")
+    extension_ai_helper_a0774e89("ai_helper.js")
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_constructor_aca0d204
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_solvecaptcha_9c1cc9fd
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_updateconfig_396874c8
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_getnextgeminikey_ccacfaf2
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_analyzeimagewithgem_da9a5314
+    extension_ai_helper_aihelper_33037148 -->|method| extension_ai_helper_aihelper_mapcheckoutfieldswi_1fe331db
+    extension_ai_helper_aihelper_analyzeimagewithgem_da9a5314 -->|calls| extension_ai_helper_aihelper_getnextgeminikey_ccacfaf2
+    class extension_ai_helper_aihelper_33037148 klass;
+    class extension_ai_helper_aihelper_analyzeimagewithgem_da9a5314 function;
+    class extension_ai_helper_aihelper_constructor_aca0d204 function;
+    class extension_ai_helper_aihelper_solvecaptcha_9c1cc9fd function;
+    class extension_ai_helper_aihelper_updateconfig_396874c8 function;
+    class extension_ai_helper_aihelper_getnextgeminikey_ccacfaf2 function;
+    class extension_ai_helper_aihelper_mapcheckoutfieldswi_1fe331db function;
+    class extension_ai_helper_a0774e89 module;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>analyzeImageWithGemini()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br><code>constructor()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br><code>getNextGeminiKey()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br>+3 more</td>
+  <td>AIHelper node in extension/ai_helper.js.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>.analyzeImageWithGemini()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><code>getNextGeminiKey()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td>Orchestrates analysis and returns structured documentation data.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>.constructor()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.constructor() node in extension/ai_helper.js.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>.getNextGeminiKey()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br><code>analyzeImageWithGemini()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.getNextGeminiKey() node in extension/ai_helper.js.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>.mapCheckoutFieldsWithDeepSeek()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small><br><code>fillUSCustomerShippingInfo()</code><br><small style="color:var(--muted)">extension/store_actor.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.mapCheckoutFieldsWithDeepSeek() node in extension/ai_helper.js.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>.solveCaptcha()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>.solveCaptcha() node in extension/ai_helper.js.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>.updateConfig()</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>AIHelper</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>ai_helper.js</code><br><small style="color:var(--muted)">extension/ai_helper.js</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>ai_helper.js node in extension/ai_helper.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/ai_helper.js</code></td><td>8 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: method x6, calls x1, contains x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 8. Main-World Fetch/XHR GraphQL Sniffer ====== -->
+<h2 id="main-world-fetch-xhr-graphql-sniffer">8. Main-World Fetch/XHR GraphQL Sniffer</h2>
+<p>Main-World Fetch/XHR GraphQL Sniffer groups implementation around open, extension, injectedjs, mostly in extension/injected.js. This section covers 1 nodes and 0 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Main-World Fetch/XHR GraphQL Sniffer (1 nodes, 0 edges)
+    extension_injected_xmlhttprequest_open_63cf8622("open()<br/><small>extension/injected.js</small>")
+    class extension_injected_xmlhttprequest_open_63cf8622 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>.open()</code><br><small style="color:var(--muted)">extension/injected.js</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>.open() node in extension/injected.js.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>extension/injected.js</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: No high-confidence call edges detected. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<h2 id="hyperedges">Group Relationships (Hyperedges)</h2>
+<div class="grid">
+
+  <div class="card">
+    <h4>Facebook Ads Library Search, Pagination &amp; Inote Export Pipeline</h4>
+    <p><code>participates_in</code> — 6 participants</p>
+    <ul>
+      <li><code>extension_sidepanel_initfindadstab</code></li>
+      <li><code>extension_sidepanel_initfindadstab_getsearchparams</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_searchandpaginateall</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_parserelayresponse</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_normalizeadnode</code></li>
+      <li>... and 1 more</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Minea Active vs Total Camp &amp; Ratio % Analytics Flow</h4>
+    <p><code>participates_in</code> — 5 participants</p>
+    <ul>
+      <li><code>extension_sidepanel_html_minea_counter</code></li>
+      <li><code>extension_sidepanel_initfindadstab_updatemineacounterui</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_fetchactivevstotalcounts</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_fetchcountwithretry</code></li>
+      <li><code>extension_background_adslibrarygraphqlservice_extractcountfromhtml</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>Newsfeed Dual-Engine Video Ads Hunter Pipeline</h4>
+    <p><code>participates_in</code> — 5 participants</p>
+    <ul>
+      <li><code>extension_injected_handleincominggraphqltext</code></li>
+      <li><code>extension_content_script_evaluategraphqlstory</code></li>
+      <li><code>extension_content_script_scandomads</code></li>
+      <li><code>extension_content_script_auditandfilterad</code></li>
+      <li><code>extension_sidepanel_renderadslist</code></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>7-Step Super-Buyer E-Commerce Pixel Warmup Pipeline</h4>
+    <p><code>participates_in</code> — 7 participants</p>
+    <ul>
+      <li><code>extension_background_triggerstoreflow</code></li>
+      <li><code>extension_store_actor_runmasterstoreflow</code></li>
+      <li><code>extension_store_actor_detectstoreplatform</code></li>
+      <li><code>extension_store_actor_addtocartandinitiatecheckout</code></li>
+      <li><code>extension_store_actor_filluscustomershippinginfo</code></li>
+      <li>... and 2 more</li>
+    </ul>
+  </div>
+</div>
+<hr>
+<h2 id="stats">Project Statistics</h2>
+
+<div class="grid">
+  <div class="card">
+    <h4>Graph</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>Nodes</td><td>248</td></tr>
+      <tr><td>Edges</td><td>410</td></tr>
+      <tr><td>Hyperedges</td><td>4</td></tr>
+      <tr><td>Communities</td><td>12</td></tr>
+      <tr><td>Documented Sections</td><td>7</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Edge Confidence</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>EXTRACTED</td><td>390</td></tr>
+      <tr><td>INFERRED</td><td>20</td></tr>
+      <tr><td>AMBIGUOUS</td><td>0</td></tr>
+    </table>
+  </div>
+</div>
+
+<div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
+  <p>Extension-SPY-FEED-ADS-API — Architecture Documentation</p>
+  <p>Generated: 2026-11-05 03:12 UTC · graphify callflow-html</p>
+</div>
+
+</div><!-- .container -->
+
+<script>
+(function () {
+  const mermaidConfig = {
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    flowchart: { htmlLabels: true, useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#334155',
+      lineColor: '#64748b',
+      textColor: '#e2e8f0',
+    }
+  };
+
+  mermaid.initialize(mermaidConfig);
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function enhanceMermaidDiagrams() {
+    document.querySelectorAll('.mermaid').forEach((container) => {
+      if (container.dataset.zoomReady === 'true') return;
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      container.dataset.zoomReady = 'true';
+      container.classList.add('is-enhanced');
+
+      const viewport = document.createElement('div');
+      viewport.className = 'mermaid-viewport';
+      svg.parentNode.insertBefore(viewport, svg);
+      viewport.appendChild(svg);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'mermaid-toolbar';
+      toolbar.innerHTML = [
+        '<button type="button" data-action="zoom-out" title="Zoom out">-</button>',
+        '<span class="zoom-level" data-role="level">100%</span>',
+        '<button type="button" data-action="zoom-in" title="Zoom in">+</button>',
+        '<button type="button" data-action="fit" title="Fit width">Fit</button>',
+        '<button type="button" data-action="reset" title="Reset view">Reset</button>'
+      ].join('');
+      container.insertBefore(toolbar, viewport);
+
+      const state = { scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+      const level = toolbar.querySelector('[data-role="level"]');
+
+      function applyTransform() {
+        svg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        level.textContent = `${Math.round(state.scale * 100)}%`;
+      }
+
+      function zoomBy(delta) {
+        state.scale = clamp(state.scale + delta, 0.25, 3);
+        applyTransform();
+      }
+
+      function reset() {
+        state.scale = 1;
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      function fitWidth() {
+        const rawWidth = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width
+          ? svg.viewBox.baseVal.width
+          : svg.getBoundingClientRect().width / state.scale;
+        if (!rawWidth) {
+          reset();
+          return;
+        }
+        state.scale = clamp((viewport.clientWidth - 48) / rawWidth, 0.25, 1.4);
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      toolbar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'zoom-in') zoomBy(0.15);
+        if (action === 'zoom-out') zoomBy(-0.15);
+        if (action === 'fit') fitWidth();
+        if (action === 'reset') reset();
+      });
+
+      viewport.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 0.1 : -0.1);
+      }, { passive: false });
+
+      viewport.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        state.dragging = true;
+        state.startX = event.clientX;
+        state.startY = event.clientY;
+        state.originX = state.x;
+        state.originY = state.y;
+        viewport.classList.add('is-dragging');
+        viewport.setPointerCapture(event.pointerId);
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!state.dragging) return;
+        state.x = state.originX + event.clientX - state.startX;
+        state.y = state.originY + event.clientY - state.startY;
+        applyTransform();
+      });
+
+      function endDrag(event) {
+        if (!state.dragging) return;
+        state.dragging = false;
+        viewport.classList.remove('is-dragging');
+        if (viewport.hasPointerCapture(event.pointerId)) {
+          viewport.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      viewport.addEventListener('pointerup', endDrag);
+      viewport.addEventListener('pointercancel', endDrag);
+      applyTransform();
+    });
+  }
+
+  function renderMermaid() {
+    const result = mermaid.run
+      ? mermaid.run({ querySelector: '.mermaid' })
+      : Promise.resolve();
+    Promise.resolve(result)
+      .then(enhanceMermaidDiagrams)
+      .catch((error) => {
+        console.error('Mermaid render failed:', error);
+        enhanceMermaidDiagrams();
+      });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderMermaid);
+  } else {
+    renderMermaid();
+  }
+})();
+</script>
+
+</body>
+</html>

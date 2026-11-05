@@ -1,0 +1,152 @@
+{
+  ".codex/hooks.json": {
+    "mtime": 1793848008.8557863,
+    "seen": 1793848336.3765893,
+    "ast_hash": "2d12c4ea9752581cdaadc50625b0af47",
+    "semantic_hash": "2d12c4ea9752581cdaadc50625b0af47"
+  },
+  "captured_graphql_request.json": {
+    "mtime": 1793701659.139037,
+    "seen": 1793848336.3765893,
+    "ast_hash": "b3d23d7af71c387a58e758acaa2cc398",
+    "semantic_hash": "b3d23d7af71c387a58e758acaa2cc398"
+  },
+  "captured_graphql_response.json": {
+    "mtime": 1793701659.139037,
+    "seen": 1793848336.3765893,
+    "ast_hash": "0e97fe152203b1c6c0e0dac18383429f",
+    "semantic_hash": "0e97fe152203b1c6c0e0dac18383429f"
+  },
+  "extension/ai_helper.js": {
+    "mtime": 1793680421.6482542,
+    "seen": 1793848336.3765893,
+    "ast_hash": "d2e43679e00b4f02298bd4ab01e33637",
+    "semantic_hash": "d2e43679e00b4f02298bd4ab01e33637"
+  },
+  "extension/background.js": {
+    "mtime": 1793847603.3653145,
+    "seen": 1793848336.3765893,
+    "ast_hash": "8d6e144cbb53441b0f3d04259b901484",
+    "semantic_hash": "8d6e144cbb53441b0f3d04259b901484"
+  },
+  "extension/content_script.js": {
+    "mtime": 1793680421.6497536,
+    "seen": 1793848336.3765893,
+    "ast_hash": "92c65ba45f85522b5dc665022b3e9374",
+    "semantic_hash": "92c65ba45f85522b5dc665022b3e9374"
+  },
+  "extension/injected.js": {
+    "mtime": 1793680421.650754,
+    "seen": 1793848336.3765893,
+    "ast_hash": "ae72dda70073fd78d259dc22710ad53a",
+    "semantic_hash": "ae72dda70073fd78d259dc22710ad53a"
+  },
+  "extension/manifest.json": {
+    "mtime": 1793680421.650754,
+    "seen": 1793848336.3765893,
+    "ast_hash": "0e5dfac858534bb2ab9b7d5ecd7af6e7",
+    "semantic_hash": "0e5dfac858534bb2ab9b7d5ecd7af6e7"
+  },
+  "extension/sidepanel.js": {
+    "mtime": 1793847618.2626743,
+    "seen": 1793848336.3765893,
+    "ast_hash": "4c521edef5f2c458adf2c4156dd28456",
+    "semantic_hash": "4c521edef5f2c458adf2c4156dd28456"
+  },
+  "extension/store_actor.js": {
+    "mtime": 1793680421.652254,
+    "seen": 1793848336.3765893,
+    "ast_hash": "ebb0bc3b7d56b6ed378ef8fc0548490f",
+    "semantic_hash": "ebb0bc3b7d56b6ed378ef8fc0548490f"
+  },
+  "extension/test_challenger_stress_suite.js": {
+    "mtime": 1793716976.356314,
+    "seen": 1793848336.3765893,
+    "ast_hash": "09b2e245cd4cc4fc3a9440b2b0cb9e20",
+    "semantic_hash": "09b2e245cd4cc4fc3a9440b2b0cb9e20"
+  },
+  "extension/test_m1_ui_validation.js": {
+    "mtime": 1793715399.8565757,
+    "seen": 1793848336.3765893,
+    "ast_hash": "c2301ff89fe6358acfda7f5189074981",
+    "semantic_hash": "c2301ff89fe6358acfda7f5189074981"
+  },
+  "extension/test_m2_m3_engine.js": {
+    "mtime": 1793718484.6416905,
+    "seen": 1793848336.3765893,
+    "ast_hash": "855f347609aee4042822a8bfd5c6d2da",
+    "semantic_hash": "855f347609aee4042822a8bfd5c6d2da"
+  },
+  "run_facebook_ads_automation.py": {
+    "mtime": 1793698356.471613,
+    "seen": 1793848336.3765893,
+    "ast_hash": "09c7c96d62e70511783b803981d17767",
+    "semantic_hash": "09c7c96d62e70511783b803981d17767"
+  },
+  "test_empirical_verification.js": {
+    "mtime": 1793716837.3072352,
+    "seen": 1793848336.3765893,
+    "ast_hash": "e395e4f15733b7e21b752d6b5275bc8d",
+    "semantic_hash": "e395e4f15733b7e21b752d6b5275bc8d"
+  },
+  "AGENTS.md": {
+    "mtime": 1793848008.8537867,
+    "seen": 1793848336.3765893,
+    "ast_hash": "f36539ecc9af68f33ebd72770ce4a19e",
+    "semantic_hash": "f36539ecc9af68f33ebd72770ce4a19e"
+  },
+  "extension/ADS_API_PLAYBOOK.md": {
+    "mtime": 1793680421.6472547,
+    "seen": 1793848336.3765893,
+    "ast_hash": "0303f0e27f09c14e9552ff4bed097889",
+    "semantic_hash": "0303f0e27f09c14e9552ff4bed097889"
+  },
+  "extension/Find-ads.md": {
+    "mtime": 1793680421.6477542,
+    "seen": 1793848336.3765893,
+    "ast_hash": "3d42140dc8b9f4aa6c09bf47f1613032",
+    "semantic_hash": "3d42140dc8b9f4aa6c09bf47f1613032"
+  },
+  "extension/REACTION_MECHANISM.md": {
+    "mtime": 1793680421.6477542,
+    "seen": 1793848336.3765893,
+    "ast_hash": "36689cd5b9150874d8ee549d01a68edd",
+    "semantic_hash": "36689cd5b9150874d8ee549d01a68edd"
+  },
+  "extension/README.md": {
+    "mtime": 1793680421.6482542,
+    "seen": 1793848336.3765893,
+    "ast_hash": "71fef9af70e19dbf3de4adfa263b3740",
+    "semantic_hash": "71fef9af70e19dbf3de4adfa263b3740"
+  },
+  "extension/Video-Ads-Hunter.md": {
+    "mtime": 1793680421.6482542,
+    "seen": 1793848336.3765893,
+    "ast_hash": "0b6ee45c24a00a034f984a8fc222e085",
+    "semantic_hash": "0b6ee45c24a00a034f984a8fc222e085"
+  },
+  "extension/manual.md": {
+    "mtime": 1793680421.650754,
+    "seen": 1793848336.3765893,
+    "ast_hash": "ec786948467f81fe54461fa21ba37392",
+    "semantic_hash": "ec786948467f81fe54461fa21ba37392"
+  },
+  "extension/plane-test.md": {
+    "mtime": 1793680421.6512556,
+    "seen": 1793848336.3765893,
+    "ast_hash": "d132486d5a5e4181cd7c375d63251a49",
+    "semantic_hash": "d132486d5a5e4181cd7c375d63251a49"
+  },
+  "extension/sidepanel.html": {
+    "mtime": 1793846285.9722998,
+    "seen": 1793848336.3765893,
+    "ast_hash": "2b447ba2ea9c3159c0856d236cbb4b31",
+    "semantic_hash": "2b447ba2ea9c3159c0856d236cbb4b31"
+  },
+  "libary-API.md": {
+    "mtime": 1793698602.9610868,
+    "seen": 1793848336.3765893,
+    "ast_hash": "406e0d427530d4ca9345cc28131c7493",
+    "semantic_hash": "406e0d427530d4ca9345cc28131c7493"
+  }
+}

@@ -221,12 +221,26 @@ class AdsLibraryGraphQLService {
     this.friendlyName = 'AdLibraryMobileFocusedStateProviderRefetchQuery';
     this.isSearching = false;
     this.cancelRequested = false;
-    this.cachedDtsg = null;
-    this.cachedLsd = null;
-    this.cachedRev = '1052846864';
-    this.cachedUserId = '0';
+    this.lastResponseError = null;
+    // Fallback token dự phòng từ phiên hợp lệ đã xác minh
+    this.cachedDtsg = 'NAfzf0otYMb7P-Tsarp8Gj4Ex2C_Wxu8mLBefE81Ajr3YrsAwFoNHPg:27:1793681067';
+    this.cachedLsd = '9EyVlzAMM2eiw33CpJWzeZ';
+    this.cachedRev = '1052866173';
+    this.cachedUserId = '61577091256835';
     this.sessionID = this.generateUUID();
     this.collationToken = this.generateUUID();
+
+    // Tự động khôi phục token từ storage nếu đã lưu trước đó
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['fb_auth_cached'], (res) => {
+        if (res?.fb_auth_cached?.dtsg) {
+          this.cachedDtsg = res.fb_auth_cached.dtsg;
+          if (res.fb_auth_cached.lsd) this.cachedLsd = res.fb_auth_cached.lsd;
+          if (res.fb_auth_cached.userId && res.fb_auth_cached.userId !== '0') this.cachedUserId = res.fb_auth_cached.userId;
+          if (res.fb_auth_cached.rev) this.cachedRev = res.fb_auth_cached.rev;
+        }
+      });
+    }
   }
 
   generateUUID() {
@@ -259,7 +273,7 @@ class AdsLibraryGraphQLService {
         }
       }
 
-      // 1.2 Lấy token từ tab Facebook đang mở (nếu có)
+      // 1.2 Lấy token từ tab Facebook đang mở bằng cơ chế Deep Extraction
       if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query && chrome.scripting) {
         try {
           const tabs = await chrome.tabs.query({ url: '*://*.facebook.com/*' });
@@ -268,33 +282,98 @@ class AdsLibraryGraphQLService {
             const results = await chrome.scripting.executeScript({
               target: { tabId: fbTab.id },
               world: 'MAIN',
-              func: () => ({
-                dtsg: window.DTSGInitialData?.token || null,
-                lsd: window.LSD?.token || null,
-                userId: window.CurrentUserInitialData?.USER_ID || null
-              })
+              func: () => {
+                let dtsg = null;
+                let lsd = null;
+                let userId = null;
+                let spinR = null;
+
+                // 1. Check window globals
+                if (window.DTSGInitialData?.token) dtsg = window.DTSGInitialData.token;
+                if (window.LSD?.token) lsd = window.LSD.token;
+                if (window.CurrentUserInitialData?.USER_ID) userId = window.CurrentUserInitialData.USER_ID;
+
+                // 2. Check Facebook internal require
+                if (typeof window.require === 'function') {
+                  try { if (!dtsg) dtsg = window.require('DTSGInitialData')?.token; } catch (e) {}
+                  try { if (!dtsg) dtsg = window.require('DTSG')?.token; } catch (e) {}
+                  try { if (!dtsg) dtsg = window.require('DTSGInitData')?.token; } catch (e) {}
+                  try { if (!lsd) lsd = window.require('LSD')?.token; } catch (e) {}
+                  try { if (!userId) userId = window.require('CurrentUserInitialData')?.USER_ID; } catch (e) {}
+                }
+
+                // 3. Check hidden input elements
+                if (!dtsg) {
+                  const inputDtsg = document.querySelector('input[name="fb_dtsg"]');
+                  if (inputDtsg && inputDtsg.value) dtsg = inputDtsg.value;
+                }
+                if (!lsd) {
+                  const inputLsd = document.querySelector('input[name="lsd"]');
+                  if (inputLsd && inputLsd.value) lsd = inputLsd.value;
+                }
+
+                // 4. Scan script tags
+                if (!dtsg || !lsd) {
+                  const scripts = document.querySelectorAll('script');
+                  for (const s of scripts) {
+                    const text = s.textContent || '';
+                    if (!dtsg) {
+                      const m = text.match(/"DTSGInitialData",\[\],\{"token":"([^"]+)"\}/) ||
+                                text.match(/"token":"([A-Za-z0-9_-]+:27:\d+)"/) ||
+                                text.match(/"async_get_token":"([^"]+)"/) ||
+                                text.match(/\["DTSGInitData",\[\],\{"token":"([^"]+)"\}/);
+                      if (m) dtsg = m[1];
+                    }
+                    if (!lsd) {
+                      const m = text.match(/"LSD",\[\],\{"token":"([^"]+)"\}/) ||
+                                text.match(/name="lsd"\s+value="([^"]+)"/);
+                      if (m) lsd = m[1];
+                    }
+                    if (!userId) {
+                      const m = text.match(/"USER_ID":"(\d+)"/) || text.match(/"actorID":"(\d+)"/);
+                      if (m) userId = m[1];
+                    }
+                    if (!spinR) {
+                      const m = text.match(/"__spin_r":(\d+)/);
+                      if (m) spinR = m[1];
+                    }
+                    if (dtsg && lsd && userId) break;
+                  }
+                }
+
+                return { dtsg, lsd, userId, spinR };
+              }
             });
             const tokens = results?.[0]?.result;
             if (tokens?.dtsg) this.cachedDtsg = tokens.dtsg;
             if (tokens?.lsd) this.cachedLsd = tokens.lsd;
             if (tokens?.userId && tokens.userId !== '0') this.cachedUserId = tokens.userId;
+            if (tokens?.spinR) this.cachedRev = tokens.spinR;
           }
         } catch (e) {
           console.warn('[AdsLibrary] Không thể executeScript đọc tab FB:', e);
         }
       }
 
-      // 1.3 Nếu chưa có fb_dtsg hoặc lsd, fetch ngầm trang Ads Library để trích xuất regex
+      // 1.3 Nếu chưa có fb_dtsg hoặc lsd, fetch ngầm trang Ads Library kèm navigation headers
       if (!this.cachedDtsg || !this.cachedLsd) {
         try {
           const resp = await fetch('https://www.facebook.com/ads/library/?country=US', {
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'none'
+            },
             credentials: 'include'
           });
           const html = await resp.text();
 
           const dtsgMatch = html.match(/"DTSGInitialData",\[\],\{"token":"([^"]+)"\}/) ||
                             html.match(/"token":"([A-Za-z0-9_-]+:27:\d+)"/) ||
-                            html.match(/name="fb_dtsg"\s+value="([^"]+)"/);
+                            html.match(/name="fb_dtsg"\s+value="([^"]+)"/) ||
+                            html.match(/"async_get_token":"([^"]+)"/);
           if (dtsgMatch) this.cachedDtsg = dtsgMatch[1];
 
           const lsdMatch = html.match(/"LSD",\[\],\{"token":"([^"]+)"\}/) ||
@@ -305,6 +384,21 @@ class AdsLibraryGraphQLService {
           if (revMatch) this.cachedRev = revMatch[1];
         } catch (e) {
           console.warn('[AdsLibrary] Không thể fetch ngầm Ads Library để lấy token:', e);
+        }
+      }
+
+      // 1.4 Lưu cache token vào storage nếu hợp lệ
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        if (this.cachedDtsg && this.cachedLsd) {
+          chrome.storage.local.set({
+            fb_auth_cached: {
+              dtsg: this.cachedDtsg,
+              lsd: this.cachedLsd,
+              userId: this.cachedUserId,
+              rev: this.cachedRev,
+              updatedAt: Date.now()
+            }
+          });
         }
       }
 
@@ -345,19 +439,19 @@ class AdsLibraryGraphQLService {
     const country = (params.country || 'US').toUpperCase();
     const mediaType = (params.mediaType || 'ALL').toUpperCase();
     const activeStatus = (params.activeStatus || 'ACTIVE').toUpperCase();
-    const language = params.language || 'en';
+    const language = params.language || 'ALL';
 
     // Content languages
-    let contentLanguages = ['en'];
+    let contentLanguages = [];
     if (language === 'all' || language === 'ALL') {
       contentLanguages = [];
     } else if (language) {
       contentLanguages = [language];
     }
 
-    // Publisher platforms
+    // Publisher platforms: Nếu truyền mảng (kể cả mảng rỗng [] = Tất cả nền tảng) thì giữ nguyên
     let publisherPlatforms = params.publisherPlatforms;
-    if (!Array.isArray(publisherPlatforms) || publisherPlatforms.length === 0) {
+    if (!Array.isArray(publisherPlatforms)) {
       publisherPlatforms = ['FACEBOOK', 'INSTAGRAM', 'AUDIENCE_NETWORK'];
     }
 
@@ -376,7 +470,22 @@ class AdsLibraryGraphQLService {
     // Start Date
     let startDateObj = null;
     if (params.startDate) {
-      startDateObj = { min: params.startDate, max: null };
+      let dateVal = String(params.startDate).trim();
+      // Hỗ trợ nếu người dùng truyền số tháng (3, 6, 12, 15, 18, 24)
+      if (/^\d+$/.test(dateVal) && parseInt(dateVal, 10) <= 60) {
+        const numMonths = parseInt(dateVal, 10);
+        const d = new Date();
+        const targetDay = d.getDate();
+        d.setMonth(d.getMonth() - numMonths);
+        if (d.getDate() !== targetDay) d.setDate(0);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        dateVal = `${yyyy}-${mm}-${dd}`;
+      }
+      if (dateVal && dateVal !== 'ALL' && dateVal !== 'null') {
+        startDateObj = { min: dateVal, max: null };
+      }
     }
 
     const variables = {
@@ -453,6 +562,7 @@ class AdsLibraryGraphQLService {
    * 4. Relay Chunk Parser (Loại bỏ for (;;); và bóc tách search_results_connection)
    */
   parseRelayResponse(rawText) {
+    this.lastResponseError = null;
     if (!rawText || typeof rawText !== 'string') return null;
 
     let cleaned = rawText.trim();
@@ -466,6 +576,13 @@ class AdsLibraryGraphQLService {
     for (const line of lines) {
       try {
         const chunk = JSON.parse(line);
+        // Kiểm tra lỗi Facebook API (chưa đăng nhập, token hết hạn, rate limit)
+        if (chunk.error || chunk.errorSummary || chunk.errorDescription) {
+          this.lastResponseError = chunk.errorSummary || chunk.errorDescription || `Facebook Error code ${chunk.error}`;
+        }
+        if (Array.isArray(chunk.errors) && chunk.errors.length > 0) {
+          this.lastResponseError = chunk.errors.map(e => e.message).join('; ');
+        }
         // Kiểm tra root payload
         const rootConn = chunk?.data?.ad_library_main?.search_results_connection;
         if (rootConn) {
@@ -615,6 +732,8 @@ class AdsLibraryGraphQLService {
   async searchAndPaginateAll(params, onProgress) {
     this.isSearching = true;
     this.cancelRequested = false;
+    this.collationToken = this.generateUUID();
+    this.sessionID = this.generateUUID();
     await this.ensureAuthentication();
 
     const adsMap = new Map();
@@ -663,9 +782,20 @@ class AdsLibraryGraphQLService {
         }
 
         const responseText = await res.text();
-        const connection = this.parseRelayResponse(responseText);
+        let connection = this.parseRelayResponse(responseText);
 
         if (!connection) {
+          if (batchIndex === 1) {
+            if (this.lastResponseError) {
+              const isLogin = this.lastResponseError.includes('Log in') || this.lastResponseError.includes('1357001') || this.lastResponseError.includes('Not logged in');
+              throw new Error(isLogin
+                ? 'Facebook yêu cầu đăng nhập tài khoản. Vui lòng mở 1 tab Facebook (facebook.com/ads/library) và đăng nhập rồi bấm Tìm kiếm lại!'
+                : `Lỗi từ Facebook: ${this.lastResponseError}`);
+            }
+            if (responseText.includes('login.php') || responseText.includes('Not logged in') || responseText.includes('1357001')) {
+              throw new Error('Phiên đăng nhập Facebook đã hết hạn. Vui lòng mở Facebook (facebook.com) và đăng nhập lại!');
+            }
+          }
           console.warn('[AdsLibrary] Không tìm thấy search_results_connection trong response.');
           break;
         }
@@ -674,14 +804,49 @@ class AdsLibraryGraphQLService {
           totalCount = connection.count;
         }
 
-        const edges = connection.edges || [];
+        let edges = connection.edges || [];
         const batchAds = [];
+
+        // Nếu batch 1 trả về 0 kết quả với mediaType: VIDEO, tự động fallback sang ALL và lọc video client-side
+        if (batchIndex === 1 && edges.length === 0 && currentVars.mediaType === 'VIDEO') {
+          console.log('[AdsLibrary] Không có kết quả với mediaType VIDEO, tự động fallback sang ALL và lọc video client-side...');
+          try {
+            const fallbackVars = { ...currentVars, mediaType: 'ALL' };
+            const fallbackBody = this.buildRequestBody(fallbackVars);
+            const fallbackRes = await fetch('https://www.facebook.com/api/graphql/', {
+              method: 'POST',
+              headers: headers,
+              body: fallbackBody,
+              credentials: 'include'
+            });
+            if (fallbackRes.ok) {
+              const fallbackText = await fallbackRes.text();
+              const fallbackConn = this.parseRelayResponse(fallbackText);
+              if (fallbackConn && Array.isArray(fallbackConn.edges) && fallbackConn.edges.length > 0) {
+                connection = fallbackConn;
+                edges = fallbackConn.edges;
+                totalCount = fallbackConn.count || totalCount;
+              }
+            }
+          } catch (e) {
+            console.warn('[AdsLibrary] Fallback ALL thất bại:', e);
+          }
+        }
 
         for (const edge of edges) {
           const collated = edge?.node?.collated_results || [];
           for (const item of collated) {
             const normalized = this.normalizeAdNode(item);
             if (normalized && normalized.archive_id && !adsMap.has(normalized.archive_id)) {
+              if (params.mediaType === 'VIDEO') {
+                const isVideo = normalized.creative_format.toLowerCase().includes('video') ||
+                                (Array.isArray(item.snapshot?.videos) && item.snapshot.videos.length > 0);
+                if (!isVideo) continue;
+              } else if (params.mediaType === 'IMAGE') {
+                const isImage = normalized.creative_format.toLowerCase().includes('image') ||
+                                (Array.isArray(item.snapshot?.images) && item.snapshot.images.length > 0);
+                if (!isImage) continue;
+              }
               adsMap.set(normalized.archive_id, normalized);
               batchAds.push(normalized);
             }
@@ -750,6 +915,231 @@ class AdsLibraryGraphQLService {
   cancel() {
     this.cancelRequested = true;
     this.isSearching = false;
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ── MINEA ACTIVE VS TOTAL ADS COUNTER & RATIO ENGINE ──────────────
+  // ══════════════════════════════════════════════════════════════════
+
+  static smartRound(num) {
+    const n = Number(num) || 0;
+    if (n < 100) return n;
+    if (n >= 10000) return Math.round(n / 1000) * 1000;
+    if (n >= 1000) return Math.round(n / 100) * 100;
+    if (n >= 100) return Math.round(n / 10) * 10;
+    return n;
+  }
+
+  smartRound(num) {
+    return AdsLibraryGraphQLService.smartRound(num);
+  }
+
+  static formatNumberWithoutDecimals(num) {
+    const n = Number(num) || 0;
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(n);
+  }
+
+  formatNumberWithoutDecimals(num) {
+    return AdsLibraryGraphQLService.formatNumberWithoutDecimals(num);
+  }
+
+  static formatNumberCompact(num) {
+    const n = Number(num) || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+    return n.toString();
+  }
+
+  formatNumberCompact(num) {
+    return AdsLibraryGraphQLService.formatNumberCompact(num);
+  }
+
+  /**
+   * Trích xuất search_results_connection.count từ HTML trang Ads Library (chuẩn Minea __bbox)
+   * Tương thích 100% với MV3 Service Worker (không phụ thuộc DOMParser)
+   */
+  extractCountFromHTML(html) {
+    if (!html || typeof html !== 'string') return null;
+
+    // 1. Quét các thẻ <script> inline chứa search_results_connection theo cấu trúc __bbox của Minea
+    const scriptRegex = /<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+    let match;
+    while ((match = scriptRegex.exec(html)) !== null) {
+      const content = (match[1] || '').trim();
+      if (!content.includes('search_results_connection')) continue;
+      try {
+        const data = JSON.parse(content);
+        const bboxCount =
+          data?.require?.[0]?.[3]?.[0]?.__bbox?.require?.[0]?.[3]?.[1]?.__bbox
+            ?.result?.data?.ad_library_main?.search_results_connection?.count;
+        if (typeof bboxCount === 'number') {
+          return bboxCount;
+        }
+        const conn = this.findConnectionObject(data);
+        if (conn && typeof conn.count === 'number') {
+          return conn.count;
+        }
+      } catch (e) {
+        // Bỏ qua script không phải JSON thuần và chuyển sang bước dự phòng
+      }
+    }
+
+    // 2. Fallback Regex trực tiếp trên chuỗi HTML/JSON
+    const countRegex = /"search_results_connection"\s*:\s*\{[^{}]*"count"\s*:\s*(\d+)/;
+    const fallbackMatch = html.match(countRegex);
+    if (fallbackMatch && fallbackMatch[1]) {
+      return parseInt(fallbackMatch[1], 10);
+    }
+
+    return null;
+  }
+
+  /**
+   * Xây dựng URL trang Facebook Ads Library với tham số active_status = 'all' | 'active'
+   */
+  buildAdsLibraryUrlWithStatus(params = {}, status = 'all') {
+    const vars = this.buildVariables({
+      ...params,
+      activeStatus: String(status || 'all').toUpperCase()
+    });
+    const url = new URL('https://www.facebook.com/ads/library/');
+    url.searchParams.set('active_status', String(status || 'all').toLowerCase());
+    url.searchParams.set('ad_type', (vars.adType || 'ALL').toLowerCase());
+    url.searchParams.set('country', vars.country || 'US');
+    url.searchParams.set('q', vars.queryString || '');
+    url.searchParams.set('search_type', (vars.searchType || 'KEYWORD_UNORDERED').toLowerCase());
+    url.searchParams.set('media_type', (vars.mediaType || 'ALL').toLowerCase());
+
+    if (vars.startDate && vars.startDate.min) {
+      url.searchParams.set('start_date[min]', vars.startDate.min);
+    }
+    if (Array.isArray(vars.contentLanguages) && vars.contentLanguages.length > 0) {
+      url.searchParams.set('content_languages[0]', vars.contentLanguages[0]);
+    }
+    if (Array.isArray(vars.publisherPlatforms) && vars.publisherPlatforms.length > 0) {
+      vars.publisherPlatforms.forEach((plat, idx) => {
+        url.searchParams.set(`publisher_platforms[${idx}]`, String(plat).toLowerCase());
+      });
+    }
+    return url.toString();
+  }
+
+  /**
+   * Fetch số lượng quảng cáo theo trạng thái ('all' hoặc 'active') kèm cơ chế Exponential Backoff (3 lần: 1s, 2s, 4s)
+   */
+  async fetchCountWithRetry(params = {}, status = 'all', maxRetries = 3, baseDelayMs = 1000) {
+    const normalizedStatus = String(status || 'all').toUpperCase();
+    const statusParams = {
+      ...params,
+      activeStatus: normalizedStatus
+    };
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Chiến lược 1: Truy vấn nhanh qua GraphQL Relay API để lấy search_results_connection.count
+        const vars = this.buildVariables(statusParams, null);
+        vars.collationToken = this.generateUUID();
+        vars.sessionID = this.generateUUID();
+        const body = this.buildRequestBody(vars);
+        const headers = {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'X-FB-Friendly-Name': this.friendlyName,
+          'X-FB-LSD': this.cachedLsd || '',
+          'X-ASBD-ID': '359341',
+          'Origin': 'https://www.facebook.com',
+          'Referer': `https://www.facebook.com/ads/library/?active_status=${normalizedStatus.toLowerCase()}&ad_type=all`
+        };
+
+        const gqlRes = await fetch('https://www.facebook.com/api/graphql/', {
+          method: 'POST',
+          headers,
+          body,
+          credentials: 'include'
+        });
+
+        if (gqlRes && gqlRes.ok) {
+          const text = await gqlRes.text();
+          // Kiểm tra nếu text là HTML chứa __bbox (khi mock hoặc redirect)
+          if (text.includes('<script') && text.includes('search_results_connection')) {
+            const htmlCount = this.extractCountFromHTML(text);
+            if (typeof htmlCount === 'number') return htmlCount;
+          }
+          const conn = this.parseRelayResponse(text);
+          if (conn && typeof conn.count === 'number') {
+            return conn.count;
+          }
+        }
+
+        // Chiến lược 2 (Chuẩn Minea): Fetch HTML trang Ads Library với active_status=all|active và bóc __bbox
+        const pageUrl = this.buildAdsLibraryUrlWithStatus(params, status);
+        const htmlRes = await fetch(pageUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9'
+          },
+          credentials: 'include'
+        });
+
+        if (htmlRes && htmlRes.ok) {
+          const htmlText = await htmlRes.text();
+          const countFromHtml = this.extractCountFromHTML(htmlText);
+          if (typeof countFromHtml === 'number') {
+            return countFromHtml;
+          }
+        }
+
+        throw new Error(`Không trích xuất được count cho status=${status} ở lần thử #${attempt}`);
+      } catch (err) {
+        if (attempt === maxRetries) {
+          console.warn(`[AdsLibrary][MineaCounter] Thất bại sau ${maxRetries} lần thử (${status}):`, err.message);
+          return null;
+        }
+        const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Thực thi song song 2 request (Promise.all) lấy Active Camp & Total Camp, tính tỷ lệ %
+   */
+  async fetchActiveVsTotalCounts(params = {}, maxRetries = 3, baseDelayMs = 1000) {
+    await this.ensureAuthentication();
+
+    const [rawTotal, rawActive] = await Promise.all([
+      this.fetchCountWithRetry(params, 'all', maxRetries, baseDelayMs),
+      this.fetchCountWithRetry(params, 'active', maxRetries, baseDelayMs)
+    ]);
+
+    if (rawTotal === null && rawActive === null) {
+      throw new Error('Không thể lấy dữ liệu Active / Total từ Facebook Ads Library.');
+    }
+
+    const activeCount = typeof rawActive === 'number' ? Math.max(0, rawActive) : 0;
+    const totalCount = typeof rawTotal === 'number' ? Math.max(activeCount, rawTotal) : activeCount;
+    const inactiveCount = Math.max(0, totalCount - activeCount);
+    const ratioPercent = totalCount > 0 ? Number(((activeCount / totalCount) * 100).toFixed(1)) : 0;
+
+    const smartActive = this.smartRound(activeCount);
+    const smartTotal = this.smartRound(totalCount);
+    const formattedActive = `~${this.formatNumberWithoutDecimals(smartActive)}`;
+    const formattedTotal = `${totalCount > 50000 ? '>' : '~'}${this.formatNumberCompact(smartTotal)}`;
+
+    return {
+      activeCount,
+      totalCount,
+      inactiveCount,
+      ratioPercent,
+      smartActive,
+      smartTotal,
+      formattedActive,
+      formattedTotal
+    };
   }
 }
 
@@ -1892,6 +2282,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const searchParams = payload || {};
       console.log('[Background] Nhận yêu cầu tìm kiếm Ads Library:', searchParams);
 
+      if (adsLibraryService.isSearching) {
+        console.warn('[Background] Đang có tiến trình tìm kiếm Ads Library đang chạy, bỏ qua yêu cầu trùng lặp.');
+        sendResponse({ success: false, message: 'Đang có tiến trình tìm kiếm Ads Library đang chạy.' });
+        return true;
+      }
+
+      // Chạy song song (concurrently) bộ đếm Minea Active vs Total Camp & Ratio %
+      adsLibraryService.fetchActiveVsTotalCounts(searchParams)
+        .then((counterData) => {
+          chrome.runtime.sendMessage({
+            action: 'ACTIVE_VS_TOTAL_UPDATE',
+            payload: { status: 'SUCCESS', ...counterData }
+          }).catch(() => {});
+        })
+        .catch((err) => {
+          chrome.runtime.sendMessage({
+            action: 'ACTIVE_VS_TOTAL_UPDATE',
+            payload: { status: 'ERROR', error: err.message }
+          }).catch(() => {});
+        });
+
       adsLibraryService.searchAndPaginateAll(searchParams, (progress) => {
         // Protocol 1: SEARCH_PROGRESS_UPDATE
         chrome.runtime.sendMessage({
@@ -1912,7 +2323,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else if (progress.status === 'COMPLETED') {
           chrome.runtime.sendMessage({
             action: 'FIND_ADS_COMPLETED',
-            payload: { totalParsed: progress.extractedCount }
+            payload: {
+              totalParsed: progress.extractedCount,
+              totalFound: progress.totalFound
+            }
           }).catch(() => {});
         } else if (progress.status === 'FETCHING_PAGE' || progress.status === 'SEARCHING') {
           chrome.runtime.sendMessage({
@@ -1937,6 +2351,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log('[Background] Nhận tín hiệu dừng tìm kiếm Ads Library.');
       adsLibraryService.cancel();
       sendResponse({ success: true, message: 'Đã dừng tìm kiếm Ads Library.' });
+      return true;
+    }
+
+    case 'FETCH_ACTIVE_VS_TOTAL': {
+      const searchParams = payload || {};
+      (async () => {
+        try {
+          const counterData = await adsLibraryService.fetchActiveVsTotalCounts(searchParams);
+          chrome.runtime.sendMessage({
+            action: 'ACTIVE_VS_TOTAL_UPDATE',
+            payload: { status: 'SUCCESS', ...counterData }
+          }).catch(() => {});
+          sendResponse({ success: true, data: counterData });
+        } catch (err) {
+          console.error('[Background] Lỗi FETCH_ACTIVE_VS_TOTAL:', err);
+          chrome.runtime.sendMessage({
+            action: 'ACTIVE_VS_TOTAL_UPDATE',
+            payload: { status: 'ERROR', error: err.message }
+          }).catch(() => {});
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
       return true;
     }
 

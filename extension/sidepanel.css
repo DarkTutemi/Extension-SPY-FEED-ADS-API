@@ -2007,3 +2007,176 @@ select option {
   border-color: var(--accent-cyan);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════
+   ── MINEA ACTIVE VS TOTAL CAMP & RATIO % PANEL ──────────────────────
+   ══════════════════════════════════════════════════════════════════ */
+.minea-counter-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.75));
+  border: 1px solid rgba(232, 95, 46, 0.45);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.minea-counter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.minea-counter-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.minea-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: rgba(232, 95, 46, 0.2);
+  border: 1px solid rgba(232, 95, 46, 0.45);
+  font-size: 11px;
+}
+
+.btn-minea-check {
+  background: linear-gradient(135deg, #e85f2e, #f97316);
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(232, 95, 46, 0.35);
+  white-space: nowrap;
+}
+
+.btn-minea-check:hover:not(:disabled) {
+  background: linear-gradient(135deg, #d94e1f, #ea580c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(232, 95, 46, 0.5);
+}
+
+.btn-minea-check:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.minea-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.minea-stat-box {
+  background: rgba(11, 15, 25, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.minea-stat-box.active-box {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.minea-stat-box.total-box {
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.minea-stat-box.ratio-box {
+  border-color: rgba(232, 95, 46, 0.35);
+}
+
+.minea-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.minea-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.minea-dot.active-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
+}
+
+.minea-dot.total-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.7);
+}
+
+.minea-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.minea-stat-main {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  line-height: 1.25;
+  margin-top: 1px;
+}
+
+#minea-active-count {
+  color: #22c55e;
+}
+
+#minea-total-count {
+  color: #38bdf8;
+}
+
+#minea-ratio-percent {
+  color: #fb923c;
+}
+
+.minea-stat-sub {
+  font-size: 9.5px;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.minea-ratio-bar-track {
+  margin-top: 8px;
+  height: 6px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.minea-ratio-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #e85f2e, #22c55e);
+  border-radius: 999px;
+  transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}

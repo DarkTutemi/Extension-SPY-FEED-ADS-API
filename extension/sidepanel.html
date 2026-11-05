@@ -582,13 +582,13 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
               <input type="checkbox" id="chk-platform-an" value="AUDIENCE_NETWORK" checked> Audience Net
             </label>
             <label class="find-ads-checkbox-label">
-              <input type="checkbox" id="chk-platform-msg" value="MESSENGER"> Messenger
+              <input type="checkbox" id="chk-platform-msg" value="MESSENGER" checked> Messenger
             </label>
             <label class="find-ads-checkbox-label">
-              <input type="checkbox" id="chk-platform-wa" value="WHATSAPP"> WhatsApp
+              <input type="checkbox" id="chk-platform-wa" value="WHATSAPP" checked> WhatsApp
             </label>
             <label class="find-ads-checkbox-label">
-              <input type="checkbox" id="chk-platform-threads" value="THREADS"> Threads
+              <input type="checkbox" id="chk-platform-threads" value="THREADS" checked> Threads
             </label>
           </div>
         </div>
@@ -619,14 +619,29 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
         <div class="find-ads-dual-row">
           <div class="form-row" style="flex: 1;">
             <label for="find-ads-start-date">Từ ngày (On or after):</label>
-            <input type="date" id="find-ads-start-date" class="code-input find-ads-select" style="color: #fff;">
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <select id="find-ads-start-date" class="code-input find-ads-select" style="flex: 1;">
+                <option value="ALL" selected>Tất cả thời gian (Mặc định)</option>
+                <option value="3">3 tháng gần nhất</option>
+                <option value="6">6 tháng gần nhất</option>
+                <option value="12">12 tháng gần nhất (1 năm)</option>
+                <option value="15">15 tháng gần nhất</option>
+                <option value="18">18 tháng gần nhất (1.5 năm)</option>
+                <option value="24">24 tháng gần nhất (2 năm)</option>
+                <option value="CUSTOM">Tùy chọn ngày cụ thể...</option>
+              </select>
+              <button type="button" id="btn-clear-start-date" title="Xóa bộ lọc ngày (Quét mọi thời gian)" style="padding: 6px 10px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #94a3b8; border-radius: 6px; cursor: pointer;">✕</button>
+            </div>
+            <div id="find-ads-custom-date-wrapper" style="display: none; margin-top: 6px; align-items: center; gap: 4px;">
+              <input type="date" id="find-ads-custom-date" class="code-input find-ads-select" style="color: #fff; flex: 1;">
+            </div>
           </div>
 
           <div class="form-row" style="flex: 1;">
             <label for="find-ads-language">Ngôn ngữ bài viết:</label>
             <select id="find-ads-language" class="code-input find-ads-select">
-              <option value="en" selected>English (en)</option>
-              <option value="ALL">Tất cả ngôn ngữ (ALL)</option>
+              <option value="ALL" selected>Tất cả ngôn ngữ (ALL - Khuyên dùng)</option>
+              <option value="en">English (en)</option>
               <option value="vi">Tiếng Việt (vi)</option>
               <option value="zh">Tiếng Trung (zh)</option>
               <option value="es">Tiếng Tây Ban Nha (es)</option>
@@ -646,6 +661,55 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
             <option value="START_DATE_DESC">Ngày bắt đầu gần nhất (Most recent / Start date)</option>
             <option value="RELEVANCY">Độ liên quan (Relevancy)</option>
           </select>
+        </div>
+
+        <!-- Minea Active vs Total Camp & Ratio % Counter -->
+        <div class="minea-counter-panel" id="find-ads-minea-counter">
+          <div class="minea-counter-header">
+            <div class="minea-counter-title">
+              <span class="minea-icon">📊</span>
+              <span>Active vs Total Camp (Minea Analytics)</span>
+            </div>
+            <button type="button" id="btn-check-active-total" class="btn-minea-check" title="Kiểm tra nhanh số lượng Active / Total Camp mà không cần tải toàn bộ danh sách Ads">
+              ⚡ Check nhanh
+            </button>
+          </div>
+
+          <div class="minea-counter-grid">
+            <!-- Active Camp -->
+            <div class="minea-stat-box active-box">
+              <div class="minea-stat-top">
+                <span class="minea-dot active-dot"></span>
+                <span class="minea-stat-label">Active Camp</span>
+              </div>
+              <div class="minea-stat-main" id="minea-active-count">~0</div>
+              <div class="minea-stat-sub" id="minea-active-raw">Chính xác: 0 camp</div>
+            </div>
+
+            <!-- Total Camp -->
+            <div class="minea-stat-box total-box">
+              <div class="minea-stat-top">
+                <span class="minea-dot total-dot"></span>
+                <span class="minea-stat-label">Total Camp</span>
+              </div>
+              <div class="minea-stat-main" id="minea-total-count">~0</div>
+              <div class="minea-stat-sub" id="minea-total-raw">Tổng: 0 camp</div>
+            </div>
+
+            <!-- Ratio % (Active / Total) -->
+            <div class="minea-stat-box ratio-box">
+              <div class="minea-stat-top">
+                <span class="minea-stat-label">Tỷ lệ Active / Total</span>
+              </div>
+              <div class="minea-stat-main" id="minea-ratio-percent">0%</div>
+              <div class="minea-stat-sub" id="minea-ratio-status">Chưa quét</div>
+            </div>
+          </div>
+
+          <!-- Thanh Progress Bar hiển thị trực quan tỷ lệ Active / Total -->
+          <div class="minea-ratio-bar-track">
+            <div class="minea-ratio-bar-fill" id="minea-ratio-bar-fill" style="width: 0%;"></div>
+          </div>
         </div>
       </div>
     </section>
