@@ -220,13 +220,16 @@ class AdsLibraryGraphQLService {
     this.docId = '26617181747964058';
     this.friendlyName = 'AdLibraryMobileFocusedStateProviderRefetchQuery';
     this.isSearching = false;
+    this.isBatchSearching = false;
     this.cancelRequested = false;
+    this.batchCancelRequested = false;
     this.lastResponseError = null;
     // Fallback token dự phòng từ phiên hợp lệ đã xác minh
     this.cachedDtsg = 'NAfzf0otYMb7P-Tsarp8Gj4Ex2C_Wxu8mLBefE81Ajr3YrsAwFoNHPg:27:1793681067';
     this.cachedLsd = '9EyVlzAMM2eiw33CpJWzeZ';
     this.cachedRev = '1052866173';
     this.cachedUserId = '61577091256835';
+    this.activeFbTabId = null;
     this.sessionID = this.generateUUID();
     this.collationToken = this.generateUUID();
 
@@ -253,8 +256,10 @@ class AdsLibraryGraphQLService {
 
   /**
    * 1. Token Harvesting: Trích xuất cookie Facebook, fb_dtsg, lsd và UID
+   * Hỗ trợ tự động mở tab ngầm Ads Library nếu chưa có tab Facebook nào mở để không bao giờ lỗi phiên (1357001).
    */
-  async ensureAuthentication() {
+  async ensureAuthentication(forceOpenTab = false) {
+    let extractedFreshFromTab = false;
     try {
       // 1.1 Lấy c_user từ cookie Facebook
       if (typeof chrome !== 'undefined' && chrome.cookies && chrome.cookies.get) {
@@ -273,12 +278,53 @@ class AdsLibraryGraphQLService {
         }
       }
 
-      // 1.2 Lấy token từ tab Facebook đang mở bằng cơ chế Deep Extraction
+      // 1.2 Lấy token từ tab Facebook đang mở (hoặc tự mở 1 tab ngầm nếu chưa có tab FB nào)
       if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query && chrome.scripting) {
         try {
-          const tabs = await chrome.tabs.query({ url: '*://*.facebook.com/*' });
+          let tabs = await chrome.tabs.query({ url: '*://*.facebook.com/*' });
+          let fbTab = null;
+
           if (tabs && tabs.length > 0) {
-            const fbTab = tabs.find(t => t.active) || tabs[0];
+            // Ưu tiên tab Ads Library hoặc tab đang active không bị discarded
+            fbTab = tabs.find(t => !t.discarded && t.url && t.url.includes('/ads/library')) ||
+                    tabs.find(t => !t.discarded && t.active) ||
+                    tabs.find(t => !t.discarded) ||
+                    tabs[0];
+          }
+
+          if ((!fbTab || fbTab.discarded || forceOpenTab) && chrome.tabs.create) {
+            try {
+              console.log('[AdsLibrary] Tự động khởi tạo/làm mới tab ngầm Facebook Ads Library để lấy token sống...');
+              const createdTab = await chrome.tabs.create({
+                url: 'https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US',
+                active: false
+              });
+              if (createdTab && createdTab.id) {
+                fbTab = createdTab;
+                await new Promise((resolve) => {
+                  let waited = 0;
+                  const timer = setInterval(async () => {
+                    waited += 300;
+                    try {
+                      const tInfo = await chrome.tabs.get(createdTab.id);
+                      if ((tInfo && tInfo.status === 'complete') || waited >= 5500) {
+                        clearInterval(timer);
+                        setTimeout(resolve, 900);
+                      }
+                    } catch (e) {
+                      clearInterval(timer);
+                      resolve();
+                    }
+                  }, 300);
+                });
+              }
+            } catch (openErr) {
+              console.warn('[AdsLibrary] Không thể mở tab ngầm FB:', openErr);
+            }
+          }
+
+          if (fbTab && fbTab.id) {
+            this.activeFbTabId = fbTab.id;
             const results = await chrome.scripting.executeScript({
               target: { tabId: fbTab.id },
               world: 'MAIN',
@@ -296,7 +342,12 @@ class AdsLibraryGraphQLService {
                 // 2. Check Facebook internal require
                 if (typeof window.require === 'function') {
                   try { if (!dtsg) dtsg = window.require('DTSGInitialData')?.token; } catch (e) {}
-                  try { if (!dtsg) dtsg = window.require('DTSG')?.token; } catch (e) {}
+                  try {
+                    if (!dtsg) {
+                      const dtsgMod = window.require('DTSG');
+                      dtsg = dtsgMod?.token || (typeof dtsgMod?.getToken === 'function' ? dtsgMod.getToken() : null);
+                    }
+                  } catch (e) {}
                   try { if (!dtsg) dtsg = window.require('DTSGInitData')?.token; } catch (e) {}
                   try { if (!lsd) lsd = window.require('LSD')?.token; } catch (e) {}
                   try { if (!userId) userId = window.require('CurrentUserInitialData')?.USER_ID; } catch (e) {}
@@ -319,7 +370,7 @@ class AdsLibraryGraphQLService {
                     const text = s.textContent || '';
                     if (!dtsg) {
                       const m = text.match(/"DTSGInitialData",\[\],\{"token":"([^"]+)"\}/) ||
-                                text.match(/"token":"([A-Za-z0-9_-]+:27:\d+)"/) ||
+                                text.match(/"token":"([A-Za-z0-9_-]+:\d+:\d+)"/) ||
                                 text.match(/"async_get_token":"([^"]+)"/) ||
                                 text.match(/\["DTSGInitData",\[\],\{"token":"([^"]+)"\}/);
                       if (m) dtsg = m[1];
@@ -345,8 +396,14 @@ class AdsLibraryGraphQLService {
               }
             });
             const tokens = results?.[0]?.result;
-            if (tokens?.dtsg) this.cachedDtsg = tokens.dtsg;
-            if (tokens?.lsd) this.cachedLsd = tokens.lsd;
+            if (tokens?.dtsg) {
+              this.cachedDtsg = tokens.dtsg;
+              extractedFreshFromTab = true;
+            }
+            if (tokens?.lsd) {
+              this.cachedLsd = tokens.lsd;
+              extractedFreshFromTab = true;
+            }
             if (tokens?.userId && tokens.userId !== '0') this.cachedUserId = tokens.userId;
             if (tokens?.spinR) this.cachedRev = tokens.spinR;
           }
@@ -355,23 +412,20 @@ class AdsLibraryGraphQLService {
         }
       }
 
-      // 1.3 Nếu chưa có fb_dtsg hoặc lsd, fetch ngầm trang Ads Library kèm navigation headers
-      if (!this.cachedDtsg || !this.cachedLsd) {
+      // 1.3 Nếu chưa lấy được token trực tiếp từ tab FB, fetch ngầm trang Ads Library
+      if (!extractedFreshFromTab && (!this.cachedDtsg || !this.cachedLsd || forceOpenTab)) {
         try {
           const resp = await fetch('https://www.facebook.com/ads/library/?country=US', {
             headers: {
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Sec-Fetch-Dest': 'document',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'none'
+              'Accept-Language': 'en-US,en;q=0.9'
             },
             credentials: 'include'
           });
           const html = await resp.text();
 
           const dtsgMatch = html.match(/"DTSGInitialData",\[\],\{"token":"([^"]+)"\}/) ||
-                            html.match(/"token":"([A-Za-z0-9_-]+:27:\d+)"/) ||
+                            html.match(/"token":"([A-Za-z0-9_-]+:\d+:\d+)"/) ||
                             html.match(/name="fb_dtsg"\s+value="([^"]+)"/) ||
                             html.match(/"async_get_token":"([^"]+)"/);
           if (dtsgMatch) this.cachedDtsg = dtsgMatch[1];
@@ -387,8 +441,8 @@ class AdsLibraryGraphQLService {
         }
       }
 
-      // 1.4 Lưu cache token vào storage nếu hợp lệ
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      // 1.4 Lưu cache token vào storage nếu vừa trích xuất mới từ tab FB
+      if (extractedFreshFromTab && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         if (this.cachedDtsg && this.cachedLsd) {
           chrome.storage.local.set({
             fb_auth_cached: {
@@ -405,11 +459,109 @@ class AdsLibraryGraphQLService {
       console.log('[AdsLibrary] Xác thực hoàn tất:', {
         userId: this.cachedUserId,
         hasDtsg: Boolean(this.cachedDtsg),
-        hasLsd: Boolean(this.cachedLsd)
+        hasLsd: Boolean(this.cachedLsd),
+        activeFbTabId: this.activeFbTabId,
+        extractedFreshFromTab
       });
     } catch (err) {
       console.error('[AdsLibrary] Lỗi trích xuất token:', err);
     }
+  }
+
+  /**
+   * 1b. Thực thi truy vấn GraphQL ưu tiên ngay trong ngữ cảnh Tab Facebook (MAIN world)
+   * Giúp đảm bảo 100% Origin: https://www.facebook.com, Cookie chính chủ và Token fb_dtsg/lsd sống.
+   * Tự động fallback về fetch() của Service Worker (hoặc môi trường Node test).
+   */
+  async executeGraphQLPost(variables, headers) {
+    const requestBody = this.buildRequestBody(variables);
+
+    if (typeof chrome !== 'undefined' && chrome.scripting && chrome.scripting.executeScript && this.activeFbTabId) {
+      try {
+        const execResults = await chrome.scripting.executeScript({
+          target: { tabId: this.activeFbTabId },
+          world: 'MAIN',
+          args: [ JSON.stringify(variables), this.docId, this.friendlyName ],
+          func: async (varsJson, docId, friendlyName) => {
+            try {
+              let dtsg = window.DTSGInitialData?.token || null;
+              let lsd = window.LSD?.token || null;
+              let userId = window.CurrentUserInitialData?.USER_ID || '0';
+              let spinR = null;
+
+              if (typeof window.require === 'function') {
+                try { if (!dtsg) dtsg = window.require('DTSGInitialData')?.token; } catch (e) {}
+                try {
+                  if (!dtsg) {
+                    const m = window.require('DTSG');
+                    dtsg = m?.token || (typeof m?.getToken === 'function' ? m.getToken() : null);
+                  }
+                } catch (e) {}
+                try { if (!dtsg) dtsg = window.require('DTSGInitData')?.token; } catch (e) {}
+                try { if (!lsd) lsd = window.require('LSD')?.token; } catch (e) {}
+                try { if (!userId || userId === '0') userId = window.require('CurrentUserInitialData')?.USER_ID || '0'; } catch (e) {}
+              }
+
+              const params = new URLSearchParams();
+              params.append('av', userId || '0');
+              params.append('__user', userId || '0');
+              params.append('__a', '1');
+              params.append('__req', 'f');
+              params.append('__hs', '20760.HYP:comet_plat_default_pkg.2.1...0');
+              params.append('dpr', '1');
+              params.append('__ccg', 'GOOD');
+              if (spinR) params.append('__rev', spinR);
+              params.append('fb_api_caller_class', 'RelayModern');
+              params.append('fb_api_req_friendly_name', friendlyName);
+              params.append('server_timestamps', 'true');
+              params.append('doc_id', docId);
+              if (dtsg) params.append('fb_dtsg', dtsg);
+              if (lsd) params.append('lsd', lsd);
+              params.append('variables', varsJson);
+
+              const r = await window.fetch('https://www.facebook.com/api/graphql/', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'X-FB-Friendly-Name': friendlyName,
+                  'X-FB-LSD': lsd || '',
+                  'X-ASBD-ID': '359341'
+                },
+                body: params.toString(),
+                credentials: 'include'
+              });
+              if (!r.ok) {
+                return { ok: false, status: r.status, text: '' };
+              }
+              const txt = await r.text();
+              return { ok: true, status: r.status, text: txt };
+            } catch (innerErr) {
+              return { ok: false, status: 0, error: innerErr.message };
+            }
+          }
+        });
+
+        const tabRes = execResults?.[0]?.result;
+        if (tabRes && tabRes.ok && tabRes.text) {
+          return tabRes.text;
+        }
+      } catch (tabExecErr) {
+        this.activeFbTabId = null;
+      }
+    }
+
+    const res = await fetch('https://www.facebook.com/api/graphql/', {
+      method: 'POST',
+      headers: headers,
+      body: requestBody,
+      credentials: 'include'
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    return await res.text();
   }
 
   /**
@@ -493,7 +645,7 @@ class AdsLibraryGraphQLService {
       adType: 'ALL',
       audienceTimeframe: 'LAST_7_DAYS',
       bylines: [],
-      collationToken: this.collationToken,
+      collationToken: params.collationToken || this.collationToken,
       contentLanguages: contentLanguages,
       countries: [country],
       country: country,
@@ -515,7 +667,7 @@ class AdsLibraryGraphQLService {
       queryString: keyword,
       regions: [],
       searchType: searchType,
-      sessionID: this.sessionID,
+      sessionID: params.sessionID || this.sessionID,
       sortData: sortData,
       source: 'PAGE_TRANSPARENCY_WIDGET',
       startDate: startDateObj,
@@ -729,12 +881,14 @@ class AdsLibraryGraphQLService {
   /**
    * 8. Vòng lặp Phân trang 100% Cursor Pagination Loop
    */
-  async searchAndPaginateAll(params, onProgress) {
+  async searchAndPaginateAll(params, onProgress, options = {}) {
     this.isSearching = true;
     this.cancelRequested = false;
     this.collationToken = this.generateUUID();
     this.sessionID = this.generateUUID();
-    await this.ensureAuthentication();
+    if (!options.skipAuthRefresh) {
+      await this.ensureAuthentication();
+    }
 
     const adsMap = new Map();
     let currentCursor = null;
@@ -914,7 +1068,569 @@ class AdsLibraryGraphQLService {
 
   cancel() {
     this.cancelRequested = true;
+    this.batchCancelRequested = true;
     this.isSearching = false;
+    this.isBatchSearching = false;
+  }
+
+  /**
+   * 8b. Chạy ngầm tuần tự hàng loạt từ khóa từ link https://inote.net/...
+   */
+  async searchInoteKeywordBatch(inoteUrl, baseParams, onProgress) {
+    this.isBatchSearching = true;
+    this.batchCancelRequested = false;
+    this.cancelRequested = false;
+
+    const globalAdsMap = new Map();
+    let accumulatedTotalFound = 0;
+
+    try {
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'SEARCHING',
+          currentPage: 1,
+          totalFound: 0,
+          extractedCount: 0,
+          batchAds: [],
+          statusMessage: `Đang tải danh sách từ khóa từ ${inoteUrl}...`
+        });
+      }
+
+      const keywords = await InoteService.fetchKeywordsFromNote(inoteUrl);
+      if (!keywords || keywords.length === 0) {
+        throw new Error('Trang Inote không có dòng từ khóa nào hợp lệ.');
+      }
+
+      console.log(`[AdsLibrary Inote Batch] Đã tải ${keywords.length} từ khóa từ ${inoteUrl}`);
+      await this.ensureAuthentication();
+
+      const totalKw = keywords.length;
+      for (let i = 0; i < totalKw; i++) {
+        if (this.batchCancelRequested || this.cancelRequested) {
+          console.log(`[AdsLibrary Inote Batch] Đã dừng tại từ khóa ${i + 1}/${totalKw}.`);
+          break;
+        }
+
+        const rawLine = keywords[i].trim();
+        if (!rawLine) continue;
+
+        const lineHasQuotes = /^["“'].*["”']$/.test(rawLine);
+        const useExact = Boolean(baseParams.isExactPhrase) || lineHasQuotes;
+        const cleanLine = rawLine.replace(/^["“']+|["”']+$/g, '').trim();
+        const formattedKw = useExact ? `"${cleanLine}"` : cleanLine;
+        const stepSearchType = useExact ? 'KEYWORD_EXACT_PHRASE' : 'KEYWORD_UNORDERED';
+        const shortKw = cleanLine.length > 32 ? cleanLine.substring(0, 32) + '...' : cleanLine;
+
+        const stepParams = {
+          ...baseParams,
+          keyword: formattedKw,
+          rawKeyword: cleanLine,
+          isExactPhrase: useExact,
+          searchType: stepSearchType
+        };
+
+        let kwTotalFound = 0;
+        let kwRecordedTotal = false;
+
+        if (typeof onProgress === 'function') {
+          onProgress({
+            status: 'SEARCHING',
+            currentPage: i + 1,
+            totalFound: Math.max(accumulatedTotalFound, globalAdsMap.size),
+            extractedCount: globalAdsMap.size,
+            batchAds: [],
+            statusMessage: `[Từ khóa ${i + 1}/${totalKw}] "${shortKw}"`
+          });
+        }
+
+        try {
+          await this.searchAndPaginateAll(
+            stepParams,
+            (stepProg) => {
+              if (this.batchCancelRequested) return;
+              if (stepProg.totalFound && !kwRecordedTotal) {
+                kwTotalFound = stepProg.totalFound;
+                accumulatedTotalFound += kwTotalFound;
+                kwRecordedTotal = true;
+              }
+
+              const newBatchAds = [];
+              if (Array.isArray(stepProg.batchAds)) {
+                for (const ad of stepProg.batchAds) {
+                  if (ad && ad.archive_id && !globalAdsMap.has(ad.archive_id)) {
+                    globalAdsMap.set(ad.archive_id, ad);
+                    newBatchAds.push(ad);
+                  }
+                }
+              }
+
+              if (typeof onProgress === 'function' && (newBatchAds.length > 0 || stepProg.status === 'FETCHING_PAGE')) {
+                onProgress({
+                  status: newBatchAds.length > 0 ? 'PROCESSING_ADS' : 'SEARCHING',
+                  currentPage: i + 1,
+                  totalFound: Math.max(accumulatedTotalFound, globalAdsMap.size),
+                  extractedCount: globalAdsMap.size,
+                  batchAds: newBatchAds,
+                  statusMessage: `[Từ khóa ${i + 1}/${totalKw}] "${shortKw}" (${globalAdsMap.size} ads)`
+                });
+              }
+            },
+            { skipAuthRefresh: true }
+          );
+        } catch (kwErr) {
+          console.warn(`[AdsLibrary Inote Batch] Bỏ qua lỗi ở từ khóa #${i + 1} ("${shortKw}"):`, kwErr.message);
+        }
+
+        if (this.batchCancelRequested) break;
+
+        if (i < totalKw - 1) {
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
+
+      const finalTotal = Math.max(accumulatedTotalFound, globalAdsMap.size);
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'COMPLETED',
+          currentPage: totalKw,
+          totalFound: finalTotal,
+          extractedCount: globalAdsMap.size,
+          batchAds: [],
+          statusMessage: this.batchCancelRequested
+            ? `Đã dừng Batch Inote (${globalAdsMap.size} ads)`
+            : `Hoàn tất ${totalKw}/${totalKw} từ khóa Inote (${globalAdsMap.size} ads)`
+        });
+      }
+
+      return Array.from(globalAdsMap.values());
+    } catch (err) {
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'ERROR',
+          error: err.message,
+          totalFound: Math.max(accumulatedTotalFound, globalAdsMap.size),
+          extractedCount: globalAdsMap.size,
+          batchAds: []
+        });
+      }
+      throw err;
+    } finally {
+      this.isBatchSearching = false;
+      this.isSearching = false;
+      this.batchCancelRequested = false;
+      this.cancelRequested = false;
+    }
+  }
+
+  /**
+   * 8c. Trích xuất siêu tốc chỉ thông tin Page (page_name, page_id, archive_id) từ GraphQL connection
+   * Không giải mã efg Base64 video, không nối caption, đảm bảo tốc độ tối đa và không bỏ sót Page nào.
+   */
+  extractPageEntitiesFromConnection(connection) {
+    if (!connection || !Array.isArray(connection.edges)) return [];
+    const extracted = [];
+
+    for (const edge of connection.edges) {
+      const node = edge?.node;
+      if (!node) continue;
+
+      const collated = Array.isArray(node.collated_results) && node.collated_results.length > 0
+        ? node.collated_results
+        : [node];
+
+      for (const item of collated) {
+        if (!item || typeof item !== 'object') continue;
+        const rawPageName = (
+          item.page_name ||
+          item.snapshot?.page_name ||
+          item.snapshot?.current_page_name ||
+          node.page_name ||
+          ''
+        ).trim();
+
+        if (!rawPageName) continue;
+
+        const pageId = String(
+          item.page_id ||
+          item.snapshot?.page_id ||
+          node.page_id ||
+          'N/A'
+        ).trim();
+
+        const archiveId = String(
+          item.ad_archive_id ||
+          item.archive_id ||
+          item.id ||
+          `ph_${pageId}_${rawPageName}`
+        ).trim();
+
+        extracted.push({
+          archive_id: archiveId,
+          page_id: pageId,
+          page_name: rawPageName,
+          is_active: item.is_active !== undefined ? Boolean(item.is_active) : true
+        });
+      }
+    }
+
+    return extracted;
+  }
+
+  /**
+   * 8d. Quét toàn bộ các trang kết quả của 1 từ khóa để lấy 100% tên Page (hỗ trợ Retry 3 lần chống sót)
+   */
+  async fetchPagesForKeywordWithRetry(stepParams, uniquePagesMap, onNewPagesFound) {
+    const kwSessionID = this.generateUUID();
+    const kwCollationToken = this.generateUUID();
+    let currentCursor = null;
+    let hasNextPage = true;
+    let batchIndex = 0;
+    let totalCount = 0;
+    let seenForKeyword = 0;
+    const maxBatches = 50;
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-FB-Friendly-Name': this.friendlyName,
+      'X-FB-LSD': this.cachedLsd || '',
+      'X-ASBD-ID': '359341',
+      'Origin': 'https://www.facebook.com',
+      'Referer': 'https://www.facebook.com/ads/library/?active_status=all&ad_type=all'
+    };
+
+    while (hasNextPage && !this.batchCancelRequested && !this.cancelRequested && batchIndex < maxBatches) {
+      batchIndex++;
+      const currentVars = this.buildVariables({
+        ...stepParams,
+        sessionID: kwSessionID,
+        collationToken: kwCollationToken
+      }, currentCursor);
+
+      let connection = null;
+      let lastErr = null;
+
+      // Retry tối đa 3 lần nếu mạng chập chờn hoặc rate-limit tạm thời để không bỏ sót bất kỳ Page nào
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        if (this.batchCancelRequested || this.cancelRequested) break;
+        try {
+          const responseText = await this.executeGraphQLPost(currentVars, headers);
+          connection = this.parseRelayResponse(responseText);
+          if (connection) {
+            break;
+          }
+          if (this.lastResponseError) {
+            throw new Error(this.lastResponseError);
+          }
+        } catch (err) {
+          lastErr = err;
+          if (attempt === 1 && !this.batchCancelRequested && !this.cancelRequested && typeof chrome !== 'undefined' && chrome.tabs) {
+            await this.ensureAuthentication(true);
+          }
+          if (attempt < 3 && !this.batchCancelRequested && !this.cancelRequested) {
+            await new Promise(r => setTimeout(r, 450 * attempt));
+          }
+        }
+      }
+
+      if (!connection) {
+        if (lastErr) {
+          console.warn(`[PageHunter] Từ khóa "${stepParams.rawKeyword || stepParams.keyword}" trang #${batchIndex} không phản hồi sau 3 lần thử:`, lastErr.message);
+        }
+        break;
+      }
+
+      // Nếu trang 1 trả về 0 kết quả do bộ lọc VIDEO, Exact Phrase hoặc câu quá dài có dấu câu cuối dòng, tự động fallback thông minh để không sót Page
+      if (batchIndex === 1 && (!connection.edges || connection.edges.length === 0)) {
+        try {
+          const rawClean = String(stepParams.rawKeyword || stepParams.keyword || '')
+            .replace(/^["“']+|["”']+$/g, '')
+            .replace(/[.!?]+$/g, '')
+            .trim();
+          const words = rawClean.split(/\s+/).filter(Boolean);
+          const fallbackQuery = words.length > 14 ? words.slice(0, 12).join(' ') : rawClean;
+
+          if (fallbackQuery) {
+            const fallbackVars = {
+              ...currentVars,
+              mediaType: 'ALL',
+              publisherPlatforms: [],
+              contentLanguages: [],
+              startDate: null,
+              searchType: 'KEYWORD_UNORDERED',
+              queryString: fallbackQuery
+            };
+            const fbText = await this.executeGraphQLPost(fallbackVars, headers);
+            const fallbackConn = this.parseRelayResponse(fbText);
+            if (fallbackConn && Array.isArray(fallbackConn.edges) && fallbackConn.edges.length > 0) {
+              connection = fallbackConn;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (typeof connection.count === 'number' && !totalCount) {
+        totalCount = connection.count;
+      }
+
+      const pageEntities = this.extractPageEntitiesFromConnection(connection);
+      seenForKeyword += pageEntities.length;
+      const newUniquePages = [];
+
+      for (const entity of pageEntities) {
+        const normKey = entity.page_name.trim().toLowerCase();
+        if (!normKey) continue;
+        if (!uniquePagesMap.has(normKey)) {
+          const pageRecord = {
+            archive_id: entity.archive_id,
+            page_id: entity.page_id,
+            page_name: entity.page_name.trim(),
+            is_active: entity.is_active,
+            platforms: 'Page Hunter',
+            creative_format: 'Page Hunter',
+            caption_text: `Từ khóa: ${stepParams.rawKeyword || stepParams.keyword}`,
+            cta_text: 'Page Hunter',
+            link_url: entity.page_id && entity.page_id !== 'N/A'
+              ? `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${stepParams.country || 'US'}&view_all_page_id=${entity.page_id}`
+              : ''
+          };
+          uniquePagesMap.set(normKey, pageRecord);
+          newUniquePages.push(pageRecord);
+        }
+      }
+
+      if (newUniquePages.length > 0 && typeof onNewPagesFound === 'function') {
+        onNewPagesFound(newUniquePages, batchIndex);
+      }
+
+      hasNextPage = Boolean(connection.page_info?.has_next_page);
+      currentCursor = connection.page_info?.end_cursor || null;
+
+      if (!hasNextPage || !currentCursor || (totalCount > 0 && seenForKeyword >= totalCount)) {
+        break;
+      }
+
+      if (this.batchCancelRequested || this.cancelRequested) {
+        break;
+      }
+
+      // Độ trễ ngắn 120ms - 200ms giữa các trang trong chế độ Page Hunter
+      const fastDelay = Math.floor(Math.random() * 80) + 120;
+      await new Promise(r => setTimeout(r, fastDelay));
+    }
+  }
+
+  /**
+   * 8e. Chế độ Page Hunter (Đa luồng 3 Workers song song, lọc trùng tên Page O(1), bỏ qua Active/Total Camp,
+   * tự động xuất thẳng danh sách tên Page ra https://inote.net/ ngay khi hoàn tất)
+   */
+  async runPageHunterBatch(inoteUrlOrKeyword, baseParams, onProgress) {
+    this.isBatchSearching = true;
+    this.isSearching = true;
+    this.batchCancelRequested = false;
+    this.cancelRequested = false;
+
+    const uniquePagesMap = new Map();
+    const validInoteUrl = InoteService.parseInoteUrl(inoteUrlOrKeyword);
+
+    try {
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'SEARCHING',
+          currentPage: 0,
+          totalFound: 0,
+          extractedCount: 0,
+          batchAds: [],
+          isPageHunter: true,
+          statusMessage: validInoteUrl
+            ? `🎯 Page Hunter: Đang tải từ khóa từ ${validInoteUrl}...`
+            : `🎯 Page Hunter: Đang khởi tạo truy vấn...`
+        });
+      }
+
+      let rawKeywords = [];
+      if (validInoteUrl) {
+        rawKeywords = await InoteService.fetchKeywordsFromNote(validInoteUrl);
+      } else {
+        rawKeywords = String(inoteUrlOrKeyword || '')
+          .split(/\r?\n/)
+          .map(s => s.trim())
+          .filter(Boolean);
+      }
+
+      // Khử trùng dòng từ khóa đầu vào (giữ nguyên thứ tự) để không bắn trùng 1 câu 2 lần
+      const seenKwSet = new Set();
+      const keywords = [];
+      for (const line of rawKeywords) {
+        const cleanCheck = line.trim().toLowerCase();
+        if (cleanCheck && !seenKwSet.has(cleanCheck)) {
+          seenKwSet.add(cleanCheck);
+          keywords.push(line.trim());
+        }
+      }
+
+      if (keywords.length === 0) {
+        throw new Error('Không tìm thấy từ khóa hợp lệ nào để chạy Page Hunter.');
+      }
+
+      await this.ensureAuthentication();
+
+      const totalKw = keywords.length;
+      const concurrency = Math.min(Number(baseParams.concurrency) || 3, totalKw);
+      let nextIndex = 0;
+      let completedKw = 0;
+
+      console.log(`[PageHunter] Bắt đầu quét ${totalKw} từ khóa độc nhất với ${concurrency} luồng song song...`);
+
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'SEARCHING',
+          currentPage: 0,
+          totalFound: totalKw,
+          extractedCount: 0,
+          batchAds: [],
+          isPageHunter: true,
+          statusMessage: `🎯 [0/${totalKw} từ khóa] Đang chạy ${concurrency} luồng song song...`
+        });
+      }
+
+      const workerTask = async (workerId) => {
+        if (workerId > 1) {
+          await new Promise(r => setTimeout(r, (workerId - 1) * 180));
+        }
+        while (!this.batchCancelRequested && !this.cancelRequested) {
+          const i = nextIndex++;
+          if (i >= totalKw) break;
+
+          const rawLine = keywords[i];
+          const lineHasQuotes = /^["“'].*["”']$/.test(rawLine);
+          const useExact = Boolean(baseParams.isExactPhrase) || lineHasQuotes;
+          const cleanLine = rawLine
+            .replace(/^["“']+|["”']+$/g, '')
+            .replace(/[.]+$/g, '')
+            .trim();
+          const formattedKw = useExact ? `"${cleanLine}"` : cleanLine;
+          const stepSearchType = useExact ? 'KEYWORD_EXACT_PHRASE' : 'KEYWORD_UNORDERED';
+          const shortKw = cleanLine.length > 28 ? cleanLine.substring(0, 28) + '...' : cleanLine;
+
+          // Chế độ Page Hunter luôn mở rộng tối đa bộ lọc phụ (ALL platforms, ALL media, ALL languages, ALL dates) để không bao giờ bỏ sót tên Page
+          const stepParams = {
+            ...baseParams,
+            keyword: formattedKw,
+            rawKeyword: cleanLine,
+            isExactPhrase: useExact,
+            searchType: stepSearchType,
+            publisherPlatforms: [],
+            mediaType: 'ALL',
+            language: 'ALL',
+            startDate: null
+          };
+
+          try {
+            await this.fetchPagesForKeywordWithRetry(
+              stepParams,
+              uniquePagesMap,
+              (newUniquePages) => {
+                if (this.batchCancelRequested || this.cancelRequested) return;
+                if (typeof onProgress === 'function') {
+                  onProgress({
+                    status: 'PROCESSING_ADS',
+                    currentPage: completedKw,
+                    totalFound: totalKw,
+                    extractedCount: uniquePagesMap.size,
+                    batchAds: newUniquePages,
+                    isPageHunter: true,
+                    statusMessage: `🎯 [${completedKw}/${totalKw}] +${newUniquePages.length} Page (${uniquePagesMap.size} Page độc nhất)`
+                  });
+                }
+              }
+            );
+          } catch (kwErr) {
+            console.warn(`[PageHunter Worker #${workerId}] Lỗi ở từ khóa #${i + 1}:`, kwErr.message);
+          }
+
+          completedKw++;
+          if (typeof onProgress === 'function' && !this.batchCancelRequested && !this.cancelRequested) {
+            onProgress({
+              status: 'SEARCHING',
+              currentPage: completedKw,
+              totalFound: totalKw,
+              extractedCount: uniquePagesMap.size,
+              batchAds: [],
+              isPageHunter: true,
+              statusMessage: `🎯 [${completedKw}/${totalKw}] "${shortKw}" (${uniquePagesMap.size} Page)`
+            });
+          }
+
+          if (nextIndex < totalKw && !this.batchCancelRequested && !this.cancelRequested) {
+            await new Promise(r => setTimeout(r, 120));
+          }
+        }
+      };
+
+      const workers = Array.from({ length: concurrency }, (_, idx) => workerTask(idx + 1));
+      await Promise.all(workers);
+
+      const finalPagesList = Array.from(uniquePagesMap.values());
+      let autoNoteResult = null;
+
+      // Tự động xuất danh sách tên Page độc nhất ra Inote ngay khi hoàn tất (nếu có ít nhất 1 Page)
+      if (finalPagesList.length > 0 && baseParams.autoExportInote !== false) {
+        try {
+          if (typeof onProgress === 'function') {
+            onProgress({
+              status: 'SEARCHING',
+              currentPage: completedKw,
+              totalFound: totalKw,
+              extractedCount: finalPagesList.length,
+              batchAds: [],
+              isPageHunter: true,
+              statusMessage: `🎯 Đang tự động xuất ${finalPagesList.length} tên Page ra inote.net...`
+            });
+          }
+          const pageNamesText = finalPagesList.map(p => p.page_name).join('\n');
+          autoNoteResult = await InoteService.createNote(pageNamesText, {
+            openTab: baseParams.openInoteTab !== false
+          });
+        } catch (inoteErr) {
+          console.warn('[PageHunter] Không thể tự động tạo Inote:', inoteErr.message);
+        }
+      }
+
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'COMPLETED',
+          currentPage: completedKw,
+          totalFound: totalKw,
+          extractedCount: finalPagesList.length,
+          batchAds: [],
+          isPageHunter: true,
+          autoNoteResult: autoNoteResult,
+          statusMessage: autoNoteResult && autoNoteResult.noteUrl
+            ? `🎯 Hoàn tất ${completedKw}/${totalKw} từ khóa → Đã xuất ${finalPagesList.length} Page ra Inote!`
+            : `🎯 Hoàn tất ${completedKw}/${totalKw} từ khóa (${finalPagesList.length} Page độc nhất)`
+        });
+      }
+
+      return finalPagesList;
+    } catch (err) {
+      if (typeof onProgress === 'function') {
+        onProgress({
+          status: 'ERROR',
+          error: err.message,
+          currentPage: 0,
+          totalFound: 0,
+          extractedCount: uniquePagesMap.size,
+          batchAds: [],
+          isPageHunter: true
+        });
+      }
+      throw err;
+    } finally {
+      this.isBatchSearching = false;
+      this.isSearching = false;
+      this.batchCancelRequested = false;
+      this.cancelRequested = false;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -1149,6 +1865,54 @@ class AdsLibraryGraphQLService {
 
 class InoteService {
   /**
+   * Kiểm tra và chuẩn hóa nếu chuỗi đầu vào là URL https://inote.net/<id>
+   */
+  static parseInoteUrl(rawInput) {
+    if (!rawInput || typeof rawInput !== 'string') return null;
+    const cleaned = rawInput.trim().replace(/^["“']+|["”']+$/g, '').trim();
+    const match = cleaned.match(/^(?:https?:\/\/)?(?:www\.)?inote\.net\/([a-zA-Z0-9_\-]+)\/?$/i);
+    return match ? `https://inote.net/${match[1]}` : null;
+  }
+
+  /**
+   * Giải mã các ký tự HTML entities trong textarea của inote.net
+   */
+  static decodeHtmlEntities(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&quot;/g, '"')
+      .replace(/&#0*39;|&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&amp;/g, '&');
+  }
+
+  /**
+   * Tải nội dung trang inote.net và tách từng dòng thành mảng từ khóa (bỏ qua dòng trống)
+   */
+  static async fetchKeywordsFromNote(inoteUrl) {
+    const validUrl = InoteService.parseInoteUrl(inoteUrl) || inoteUrl;
+    const res = await fetch(validUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { 'Cache-Control': 'no-cache' }
+    });
+    if (!res.ok) {
+      throw new Error(`Không thể tải trang Inote (${validUrl}): HTTP ${res.status}`);
+    }
+    const html = await res.text();
+    const textareaMatch = html.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/i);
+    const rawContent = textareaMatch ? textareaMatch[1] : '';
+    const decoded = InoteService.decodeHtmlEntities(rawContent);
+    return decoded
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+  }
+
+  /**
    * Định dạng 1 quảng cáo sang mẫu chuẩn 8 trường của ông chủ
    */
   static formatAd(ad, index) {
@@ -1178,8 +1942,20 @@ class InoteService {
   /**
    * Định dạng toàn bộ danh sách kết quả quảng cáo
    */
-    static formatAllAds(adsList, formatMode = 'full') {
+  static formatAllAds(adsList, formatMode = 'full') {
     if (!Array.isArray(adsList) || adsList.length === 0) return '';
+
+    // Chế độ 0: Chỉ lấy tên Page, mỗi tên Page 1 dòng (lọc trùng giữ thứ tự)
+    if (formatMode === 'page_name' || formatMode === 'ONLY_PAGE_NAME') {
+      const uniquePages = Array.from(
+        new Set(
+          adsList
+            .map(ad => (ad.page_name || ad.pageName || '').trim())
+            .filter(Boolean)
+        )
+      );
+      return uniquePages.join('\n');
+    }
 
     // Chế độ 1: Chỉ lấy nội dung bài viết, mỗi mẫu cách nhau 1 dòng trống
     if (formatMode === 'content' || formatMode === 'ONLY_CONTENT') {
@@ -2282,13 +3058,111 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const searchParams = payload || {};
       console.log('[Background] Nhận yêu cầu tìm kiếm Ads Library:', searchParams);
 
-      if (adsLibraryService.isSearching) {
+      if (adsLibraryService.isSearching || adsLibraryService.isBatchSearching) {
         console.warn('[Background] Đang có tiến trình tìm kiếm Ads Library đang chạy, bỏ qua yêu cầu trùng lặp.');
         sendResponse({ success: false, message: 'Đang có tiến trình tìm kiếm Ads Library đang chạy.' });
         return true;
       }
 
-      // Chạy song song (concurrently) bộ đếm Minea Active vs Total Camp & Ratio %
+      const inoteBatchUrl = InoteService.parseInoteUrl(searchParams.inoteUrl || searchParams.rawKeyword || searchParams.keyword);
+
+      const handleProgressDispatch = (progress) => {
+        // Protocol 1: SEARCH_PROGRESS_UPDATE
+        chrome.runtime.sendMessage({
+          action: 'SEARCH_PROGRESS_UPDATE',
+          payload: progress
+        }).catch(() => {});
+
+        // Protocol 2: FIND_ADS_BATCH_RECEIVED / FIND_ADS_PROGRESS / FIND_ADS_COMPLETED
+        if (progress.status === 'PROCESSING_ADS' && progress.batchAds && progress.batchAds.length > 0) {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_BATCH_RECEIVED',
+            payload: {
+              batchAds: progress.batchAds,
+              totalCount: progress.totalFound,
+              batchNumber: progress.currentPage,
+              statusMessage: progress.statusMessage || null
+            }
+          }).catch(() => {});
+        } else if (progress.status === 'COMPLETED') {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_COMPLETED',
+            payload: {
+              totalParsed: progress.extractedCount,
+              totalFound: progress.totalFound,
+              statusMessage: progress.statusMessage || null
+            }
+          }).catch(() => {});
+        } else if (progress.status === 'FETCHING_PAGE' || progress.status === 'SEARCHING') {
+          chrome.runtime.sendMessage({
+            action: 'FIND_ADS_PROGRESS',
+            payload: {
+              parsedCount: progress.extractedCount,
+              totalCount: progress.totalFound,
+              statusText: progress.statusMessage || `Đang tải Batch #${progress.currentPage}...`
+            }
+          }).catch(() => {});
+        }
+      };
+
+      if (searchParams.isPageHunter) {
+        // Chế độ Page Hunter: Đa luồng 3 Workers, bỏ qua Active/Total Camp, lọc trùng tên Page & tự động xuất Inote
+        const targetSource = inoteBatchUrl || searchParams.rawKeyword || searchParams.keyword;
+        adsLibraryService.runPageHunterBatch(targetSource, searchParams, (progress) => {
+          handleProgressDispatch(progress);
+          if (progress.status === 'COMPLETED' && progress.autoNoteResult && progress.autoNoteResult.noteUrl) {
+            chrome.runtime.sendMessage({
+              action: 'INOTE_SAVE_RESULT',
+              payload: {
+                success: true,
+                noteUrl: progress.autoNoteResult.noteUrl,
+                noteId: progress.autoNoteResult.noteId || ''
+              }
+            }).catch(() => {});
+          }
+        }).catch((err) => {
+          console.error('[Background] Lỗi tiến trình Page Hunter:', err);
+        });
+
+        sendResponse({
+          success: true,
+          isPageHunter: true,
+          isInoteBatch: Boolean(inoteBatchUrl),
+          inoteUrl: inoteBatchUrl,
+          message: 'Đã bắt đầu chế độ Page Hunter siêu tốc (3 luồng).'
+        });
+        return true;
+      }
+
+      if (inoteBatchUrl) {
+        // Chế độ Batch Inote: Chạy ngầm tuần tự từng dòng từ khóa trong trang Inote
+        adsLibraryService.searchInoteKeywordBatch(inoteBatchUrl, searchParams, (progress) => {
+          handleProgressDispatch(progress);
+          if (progress.status === 'PROCESSING_ADS' || progress.status === 'COMPLETED') {
+            const activeCnt = progress.extractedCount || 0;
+            const totalCnt = Math.max(progress.totalFound || 0, activeCnt);
+            const ratio = totalCnt > 0 ? Math.min(100, Number(((activeCnt / totalCnt) * 100).toFixed(1))) : 0;
+            chrome.runtime.sendMessage({
+              action: 'ACTIVE_VS_TOTAL_UPDATE',
+              payload: {
+                status: 'SUCCESS',
+                rawActive: activeCnt,
+                rawTotal: totalCnt,
+                activeFormatted: adsLibraryService.formatNumberWithoutDecimals(adsLibraryService.smartRound(activeCnt)),
+                totalFormatted: adsLibraryService.formatNumberWithoutDecimals(adsLibraryService.smartRound(totalCnt)),
+                ratioPercent: ratio
+              }
+            }).catch(() => {});
+          }
+        }).catch((err) => {
+          console.error('[Background] Lỗi tiến trình Inote Batch Search:', err);
+        });
+
+        sendResponse({ success: true, isInoteBatch: true, inoteUrl: inoteBatchUrl, message: 'Đã bắt đầu chạy ngầm danh sách từ khóa Inote.' });
+        return true;
+      }
+
+      // Chế độ 1 từ khóa đơn lẻ: Chạy song song bộ đếm Minea Active vs Total Camp & Ratio %
       adsLibraryService.fetchActiveVsTotalCounts(searchParams)
         .then((counterData) => {
           chrome.runtime.sendMessage({
@@ -2303,42 +3177,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }).catch(() => {});
         });
 
-      adsLibraryService.searchAndPaginateAll(searchParams, (progress) => {
-        // Protocol 1: SEARCH_PROGRESS_UPDATE
-        chrome.runtime.sendMessage({
-          action: 'SEARCH_PROGRESS_UPDATE',
-          payload: progress
-        }).catch(() => {});
-
-        // Protocol 2: FIND_ADS_BATCH_RECEIVED / FIND_ADS_PROGRESS / FIND_ADS_COMPLETED
-        if (progress.status === 'PROCESSING_ADS' && progress.batchAds && progress.batchAds.length > 0) {
-          chrome.runtime.sendMessage({
-            action: 'FIND_ADS_BATCH_RECEIVED',
-            payload: {
-              batchAds: progress.batchAds,
-              totalCount: progress.totalFound,
-              batchNumber: progress.currentPage
-            }
-          }).catch(() => {});
-        } else if (progress.status === 'COMPLETED') {
-          chrome.runtime.sendMessage({
-            action: 'FIND_ADS_COMPLETED',
-            payload: {
-              totalParsed: progress.extractedCount,
-              totalFound: progress.totalFound
-            }
-          }).catch(() => {});
-        } else if (progress.status === 'FETCHING_PAGE' || progress.status === 'SEARCHING') {
-          chrome.runtime.sendMessage({
-            action: 'FIND_ADS_PROGRESS',
-            payload: {
-              parsedCount: progress.extractedCount,
-              totalCount: progress.totalFound,
-              statusText: `Đang tải Batch #${progress.currentPage}...`
-            }
-          }).catch(() => {});
-        }
-      }).catch((err) => {
+      adsLibraryService.searchAndPaginateAll(searchParams, handleProgressDispatch).catch((err) => {
         console.error('[Background] Lỗi tiến trình tìm kiếm Ads:', err);
       });
 

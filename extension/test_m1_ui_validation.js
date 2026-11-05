@@ -20,6 +20,7 @@ const requiredHtmlIds = [
   'btn-start-find-ads',
   'btn-stop-find-ads',
   'find-ads-keyword',
+  'chk-page-hunter-mode',
   'btn-find-ads-clear-keyword',
   'find-ads-country',
   'find-ads-category',
@@ -42,6 +43,13 @@ const requiredHtmlIds = [
   'find-ads-parsed-count',
   'find-ads-batch-progress',
   'find-ads-progress-bar',
+  'chk-export-only-content',
+  'chk-export-only-links',
+  'chk-export-only-page-name',
+  'find-ads-view-mode',
+  'btn-find-ads-prev-page',
+  'btn-find-ads-next-page',
+  'find-ads-page-info',
   'btn-save-inote',
   'badge-inote-ready-count',
   'btn-copy-all-find-ads',
@@ -194,5 +202,13 @@ for (const line of requiredFields) {
   }
 }
 console.log('✓ PASS: Inote text format conforms 100% to specifications.');
+
+const { InoteService } = require('./background.js');
+const pageNameOnly = InoteService.formatAllAds([sampleAd, { ...sampleAd, archive_id: '2', page_name: 'DallasWind US' }, { ...sampleAd, archive_id: '3', page_name: 'SecondPage US' }], 'page_name');
+if (pageNameOnly !== 'DallasWind US\nSecondPage US') {
+  console.error('❌ FAIL: page_name export mode did not extract unique page names:', pageNameOnly);
+  process.exit(1);
+}
+console.log('✓ PASS: page_name export mode extracts clean unique Page Names ("DallasWind US").');
 
 console.log('\n🎉 ALL MILESTONE 1 VERIFICATION CHECKS PASSED SUCCESSFULLY!\n');

@@ -1596,6 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Search controls
     const inputKeyword = getEl('find-ads-keyword', 'findAdsKeyword');
     const chkExactPhrase = getEl('find-ads-exact-phrase', 'chkExactPhrase');
+    const chkPageHunter = getEl('chk-page-hunter-mode', 'chkPageHunterMode');
     const badgeSearchType = getEl('find-ads-search-type-badge', 'findAdsSearchTypeBadge');
     const btnClearKeyword = getEl('btn-find-ads-clear-keyword', 'btnFindAdsClearKeyword');
     const selectCountry = getEl('find-ads-country', 'findAdsCountry');
@@ -1626,6 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectSortBy = getEl('find-ads-sort-by', 'findAdsSortBy');
 
     // Minea Active vs Total Counter Elements
+    const mineaCounterPanel = document.getElementById('find-ads-minea-counter');
     const btnCheckActiveTotal = document.getElementById('btn-check-active-total');
     const mineaActiveCountEl = document.getElementById('minea-active-count');
     const mineaActiveRawEl = document.getElementById('minea-active-raw');
@@ -1636,6 +1638,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const mineaRatioBarFillEl = document.getElementById('minea-ratio-bar-fill');
 
     // Metrics & Progress
+    const statLabelTotal = document.getElementById('find-ads-stat-label-total');
+    const statLabelParsed = document.getElementById('find-ads-stat-label-parsed');
     const totalCountEl = getEl('find-ads-total-count', 'findAdsTotalCount');
     const parsedCountEl = getEl('find-ads-parsed-count', 'findAdsParsedCount');
     const batchProgressEl = getEl('find-ads-batch-progress', 'findAdsBatchProgress');
@@ -1653,20 +1657,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const inoteLink = getEl('inote-created-url-link', 'inoteCreatedUrlLink');
     const btnCopyInoteQuick = getEl('btn-copy-inote-link-quick', 'btnCopyInoteLinkQuick');
 
-    // Results container
+    // Results container & Pagination / View Mode controls
     const resultsContainer = getEl('find-ads-results-list', 'findAdsListContainer');
     const emptyState = getEl('find-ads-empty-state', 'findAdsEmptyState');
+    const selectViewMode = document.getElementById('find-ads-view-mode');
+    const btnPrevPage = document.getElementById('btn-find-ads-prev-page');
+    const btnNextPage = document.getElementById('btn-find-ads-next-page');
+    const pageInfoEl = document.getElementById('find-ads-page-info');
+    const paginationControlsEl = document.getElementById('find-ads-pagination-controls');
 
     // State
     const findAdsState = {
       isSearching: false,
       ads: [],
+      seenArchiveIds: new Set(),
       totalFound: 0,
       extractedCount: 0,
       currentBatch: 0,
       totalBatches: 0,
       lastNoteUrl: '',
-      lastNoteId: ''
+      lastNoteId: '',
+      viewMode: 'card', // 'card' (20/page) | 'compact' (50/page) | 'data_only' (0 DOM cards)
+      currentPage: 1,
+      renderedCountOnPage: 0
     };
 
     // Helper: Escape HTML
@@ -1823,14 +1836,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    function parseInoteUrlInput(rawInput) {
+      if (!rawInput || typeof rawInput !== 'string') return null;
+      const cleaned = rawInput.trim().replace(/^["“']+|["”']+$/g, '').trim();
+      const match = cleaned.match(/^(?:https?:\/\/)?(?:www\.)?inote\.net\/([a-zA-Z0-9_\-]+)\/?$/i);
+      return match ? `https://inote.net/${match[1]}` : null;
+    }
+
     // ── Function 1: getSearchParams() ────────────────────────────────
     function getSearchParams() {
       let rawKeyword = (inputKeyword ? inputKeyword.value : '').trim();
+      const inoteUrl = parseInoteUrlInput(rawKeyword);
       const isExactChecked = chkExactPhrase ? chkExactPhrase.checked : false;
-      const hasQuotes = /^["“'].*["”']$/.test(rawKeyword);
+      const hasQuotes = !inoteUrl && /^["“'].*["”']$/.test(rawKeyword);
       const isExactPhrase = isExactChecked || hasQuotes;
 
-      if (isExactPhrase) {
+      if (inoteUrl) {
+        rawKeyword = inoteUrl;
+      } else if (isExactPhrase) {
         const unquoted = rawKeyword.replace(/^["“']+|["”']+$/g, '').trim();
         rawKeyword = `"${unquoted}"`;
       }
@@ -1863,9 +1886,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Nếu người dùng chọn cả 6 nền tảng (hoặc không chọn nền tảng nào), gửi mảng rỗng [] để quét 100% nền tảng như curl Ads Library
       const finalPlatforms = (publisherPlatforms.length === 6 || publisherPlatforms.length === 0) ? [] : publisherPlatforms;
+      const isPageHunter = Boolean(chkPageHunter && chkPageHunter.checked);
 
       return {
         keyword,
+        rawKeyword,
+        inoteUrl: inoteUrl || null,
+        isInoteBatch: Boolean(inoteUrl),
+        isPageHunter,
         isExactPhrase,
         searchType,
         country,
@@ -1888,8 +1916,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Update counters
+      const isHunterActive = Boolean(chkPageHunter && chkPageHunter.checked);
       if (totalCountEl) {
-        totalCountEl.textContent = findAdsState.totalFound > 0 ? `~${findAdsState.totalFound}` : '0';
+        totalCountEl.textContent = findAdsState.totalFound > 0
+          ? (isHunterActive ? `${findAdsState.totalFound}` : `~${findAdsState.totalFound}`)
+          : '0';
       }
       if (parsedCountEl) {
         parsedCountEl.textContent = String(findAdsState.extractedCount);
@@ -1967,7 +1998,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSaveInote.disabled = findAdsState.ads.length === 0;
       }
       if (badgeInoteReadyCount) {
-        badgeInoteReadyCount.textContent = `${findAdsState.ads.length} ads`;
+        const unitLabel = (chkPageHunter && chkPageHunter.checked) ? 'pages' : 'ads';
+        badgeInoteReadyCount.textContent = `${findAdsState.ads.length} ${unitLabel}`;
       }
     }
 
@@ -1999,17 +2031,61 @@ document.addEventListener('DOMContentLoaded', () => {
     function getExportFormatMode() {
       const chkContent = getEl('chk-export-only-content', 'chkExportOnlyContent');
       const chkLinks = getEl('chk-export-only-links', 'chkExportOnlyLinks');
+      const chkPageName = getEl('chk-export-only-page-name', 'chkExportOnlyPageName');
+      if (chkPageName && chkPageName.checked) return 'page_name';
       if (chkContent && chkContent.checked) return 'content';
       if (chkLinks && chkLinks.checked) return 'links';
       return 'full';
     }
 
+    function updateExportModeBadgeUI() {
+      const badgeExportMode = document.getElementById('badge-export-mode');
+      if (!badgeExportMode) return;
+      const mode = getExportFormatMode();
+      if (mode === 'page_name') {
+        badgeExportMode.textContent = 'Chỉ lấy tên Page';
+      } else if (mode === 'content') {
+        badgeExportMode.textContent = 'Chỉ nội dung bài viết';
+      } else if (mode === 'links') {
+        badgeExportMode.textContent = 'Chỉ đường dẫn đích';
+      } else {
+        badgeExportMode.textContent = 'Đầy đủ 8 trường';
+      }
+    }
+
+    const chkExportContentEl = getEl('chk-export-only-content', 'chkExportOnlyContent');
+    const chkExportLinksEl = getEl('chk-export-only-links', 'chkExportOnlyLinks');
+    const chkExportPageNameEl = getEl('chk-export-only-page-name', 'chkExportOnlyPageName');
+    const exportCheckboxes = [chkExportContentEl, chkExportLinksEl, chkExportPageNameEl].filter(Boolean);
+    exportCheckboxes.forEach((chk) => {
+      chk.addEventListener('change', () => {
+        if (chk.checked) {
+          exportCheckboxes.forEach((other) => {
+            if (other !== chk) other.checked = false;
+          });
+        }
+        updateExportModeBadgeUI();
+      });
+    });
+
     function formatAllAdsToInoteText(ads, mode = null) {
       const exportMode = mode || getExportFormatMode();
       if (!Array.isArray(ads) || ads.length === 0) return '';
 
+      // Tích chọn: Chỉ lấy tên Page, mỗi tên Page 1 dòng (lọc trùng giữ thứ tự)
+      if (exportMode === 'page_name' || exportMode === 'ONLY_PAGE_NAME') {
+        const uniquePages = Array.from(
+          new Set(
+            ads
+              .map(ad => (ad.page_name || ad.pageName || '').trim())
+              .filter(Boolean)
+          )
+        );
+        return uniquePages.join('\n');
+      }
+
       // Tích chọn: Chỉ lấy nội dung bài viết, mỗi mẫu cách nhau 1 dòng trống
-      if (exportMode === 'content') {
+      if (exportMode === 'content' || exportMode === 'ONLY_CONTENT') {
         return ads
           .map(ad => (ad.caption_text || ad.caption || '').trim())
           .filter(Boolean)
@@ -2017,7 +2093,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Tích chọn: Chỉ lấy đường dẫn đích, mỗi link xuống dòng
-      if (exportMode === 'links') {
+      if (exportMode === 'links' || exportMode === 'ONLY_LINKS') {
         return ads
           .map(ad => (ad.link_url || '').trim())
           .filter(Boolean)
@@ -2148,7 +2224,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const btnCopySample = card.querySelector('.btn-copy-ad-sample');
       if (btnCopySample) {
         btnCopySample.addEventListener('click', async () => {
-          const sampleText = formatAdToInoteText(ad, index);
+          const currentMode = getExportFormatMode();
+          const sampleText = currentMode === 'full'
+            ? formatAdToInoteText(ad, index)
+            : formatAllAdsToInoteText([ad], currentMode);
           const ok = await copyText(sampleText);
           if (ok) {
             const oldText = btnCopySample.textContent;
@@ -2182,13 +2261,235 @@ document.addEventListener('DOMContentLoaded', () => {
       return card;
     }
 
+    // ── Function 3b: renderCompactAdRow() (Lightweight 50/page row) ──
+    function renderCompactAdRow(ad, index) {
+      const row = document.createElement('div');
+      row.className = 'find-ad-compact-row';
+      row.dataset.archiveId = ad.archive_id || '';
+
+      const archiveId = safeHtml(ad.archive_id || '');
+      const pageId = safeHtml(ad.page_id || '');
+      const pageName = safeHtml(ad.page_name || 'Advertiser');
+      const isActive = Boolean(ad.is_active);
+      const creativeFormat = safeHtml(ad.creative_format || 'Hình ảnh');
+      const isVideo = (ad.creative_format || '').toLowerCase().includes('video');
+      const linkUrl = ad.link_url || '';
+      const safeLinkUrl = safeHtml(linkUrl);
+      const destinationDomain = linkUrl ? (() => {
+        try { return new URL(linkUrl).hostname.replace(/^www\./, ''); } catch (e) { return linkUrl.substring(0, 24); }
+      })() : '';
+      const captionSnippet = safeHtml((ad.caption_text || '').replace(/\s+/g, ' ').trim().substring(0, 110));
+
+      row.innerHTML = `
+        <div class="find-ad-compact-main">
+          <div class="find-ad-compact-left">
+            <span class="find-ad-compact-idx">#${index + 1}</span>
+            <span class="tag-active-status ${isActive ? 'active' : 'inactive'}" style="flex-shrink:0;">${isActive ? '●' : '○'}</span>
+            <a href="https://www.facebook.com/${pageId}" target="_blank" class="find-ad-compact-page" title="Page ID: ${pageId}">${pageName}</a>
+            <span class="${isVideo ? 'video-pill' : 'image-pill'}" style="flex-shrink:0;">${creativeFormat}</span>
+            ${destinationDomain ? `<span class="find-ad-compact-domain" title="${safeLinkUrl}">${safeHtml(destinationDomain)}</span>` : ''}
+          </div>
+          <div class="find-ad-compact-actions">
+            <button type="button" class="btn-card-action btn-copy-ad-sample" style="padding:2px 6px; font-size:10px;" title="Copy mẫu theo tùy chọn xuất">Copy</button>
+            ${linkUrl ? `<a href="${safeLinkUrl}" target="_blank" class="archive-pill" style="padding:2px 5px; font-size:9.5px;" title="Mở Link Đích">Link ↗</a>` : ''}
+            <a href="https://www.facebook.com/ads/library/?id=${archiveId}" target="_blank" class="archive-pill" style="padding:2px 5px; font-size:9.5px;" title="Mở trên Ads Library">ID ↗</a>
+          </div>
+        </div>
+        ${captionSnippet ? `<div class="find-ad-compact-snippet">${captionSnippet}</div>` : ''}
+      `;
+
+      const btnCopySample = row.querySelector('.btn-copy-ad-sample');
+      if (btnCopySample) {
+        btnCopySample.addEventListener('click', async () => {
+          const currentMode = getExportFormatMode();
+          const sampleText = currentMode === 'full'
+            ? formatAdToInoteText(ad, index)
+            : formatAllAdsToInoteText([ad], currentMode);
+          const ok = await copyText(sampleText);
+          if (ok) {
+            const oldText = btnCopySample.textContent;
+            btnCopySample.textContent = '✓';
+            btnCopySample.style.color = '#34d399';
+            setTimeout(() => {
+              btnCopySample.textContent = oldText;
+              btnCopySample.style.color = '';
+            }, 1200);
+          }
+        });
+      }
+
+      return row;
+    }
+
+    function getFindAdsPageSize() {
+      return findAdsState.viewMode === 'compact' ? 50 : 20;
+    }
+
+    function updatePaginationBarUI() {
+      const totalAds = findAdsState.ads.length;
+      if (findAdsState.viewMode === 'data_only') {
+        if (paginationControlsEl) paginationControlsEl.style.display = 'none';
+        const dataCountEl = document.getElementById('find-ads-data-only-count');
+        if (dataCountEl) dataCountEl.textContent = String(totalAds);
+        return;
+      }
+
+      if (paginationControlsEl) paginationControlsEl.style.display = 'flex';
+      const pageSize = getFindAdsPageSize();
+      const totalPages = Math.max(1, Math.ceil(totalAds / pageSize));
+      if (findAdsState.currentPage > totalPages) {
+        findAdsState.currentPage = totalPages;
+      }
+      if (findAdsState.currentPage < 1) {
+        findAdsState.currentPage = 1;
+      }
+
+      if (pageInfoEl) {
+        pageInfoEl.textContent = `Trang ${findAdsState.currentPage}/${totalPages} (${totalAds})`;
+      }
+      if (btnPrevPage) {
+        btnPrevPage.disabled = findAdsState.currentPage <= 1 || totalAds === 0;
+      }
+      if (btnNextPage) {
+        btnNextPage.disabled = findAdsState.currentPage >= totalPages || totalAds === 0;
+      }
+    }
+
+    function renderCurrentFindAdsPage(scrollToTop = false) {
+      if (!resultsContainer) return;
+      const totalAds = findAdsState.ads.length;
+      updatePaginationBarUI();
+
+      if (totalAds === 0) {
+        resultsContainer.innerHTML = '';
+        findAdsState.renderedCountOnPage = 0;
+        if (emptyState) {
+          emptyState.style.display = 'flex';
+          resultsContainer.appendChild(emptyState);
+        }
+        return;
+      }
+
+      if (emptyState) emptyState.style.display = 'none';
+
+      if (findAdsState.viewMode === 'data_only') {
+        resultsContainer.innerHTML = `
+          <div class="find-ads-data-only-banner">
+            <div style="font-size: 24px;">⚡</div>
+            <div style="font-size: 12.5px; font-weight: 700; color: #38bdf8;">
+              Chế độ Siêu Tốc (Tắt render thẻ DOM chống lag)
+            </div>
+            <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.5;">
+              Đã thu thập và lưu trữ an toàn <strong id="find-ads-data-only-count" style="color: #34d399; font-size: 13px;">${totalAds}</strong> mẫu quảng cáo trong RAM.<br>
+              Ông chủ có thể bấm <strong>📝 Lưu Vào inote.net</strong> hoặc <strong>📋 Copy Tất Cả</strong> ở trên để xuất toàn bộ 100% kết quả ngay lập tức!
+            </div>
+          </div>
+        `;
+        findAdsState.renderedCountOnPage = 0;
+        return;
+      }
+
+      const pageSize = getFindAdsPageSize();
+      const startIdx = (findAdsState.currentPage - 1) * pageSize;
+      const endIdx = Math.min(totalAds, startIdx + pageSize);
+      const slice = findAdsState.ads.slice(startIdx, endIdx);
+
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < slice.length; i++) {
+        const globalIdx = startIdx + i;
+        const ad = slice[i];
+        const el = findAdsState.viewMode === 'compact'
+          ? renderCompactAdRow(ad, globalIdx)
+          : renderAdCard(ad, globalIdx);
+        frag.appendChild(el);
+      }
+
+      resultsContainer.innerHTML = '';
+      resultsContainer.appendChild(frag);
+      findAdsState.renderedCountOnPage = slice.length;
+
+      if (scrollToTop) {
+        resultsContainer.scrollTop = 0;
+      }
+    }
+
+    function appendIncomingBatchToCurrentPage() {
+      const totalAds = findAdsState.ads.length;
+      updatePaginationBarUI();
+      if (!resultsContainer || totalAds === 0) return;
+
+      if (emptyState && emptyState.parentElement === resultsContainer) {
+        emptyState.style.display = 'none';
+      }
+
+      if (findAdsState.viewMode === 'data_only') {
+        if (!resultsContainer.querySelector('.find-ads-data-only-banner')) {
+          renderCurrentFindAdsPage(false);
+        } else {
+          const dataCountEl = document.getElementById('find-ads-data-only-count');
+          if (dataCountEl) dataCountEl.textContent = String(totalAds);
+        }
+        return;
+      }
+
+      const pageSize = getFindAdsPageSize();
+      const startIdx = (findAdsState.currentPage - 1) * pageSize;
+      const targetEndIdx = Math.min(totalAds, startIdx + pageSize);
+      const currentRenderedEndIdx = startIdx + findAdsState.renderedCountOnPage;
+
+      // Only append if the current page still has unfilled slots (< 20 or < 50 cards)
+      if (targetEndIdx > currentRenderedEndIdx) {
+        const frag = document.createDocumentFragment();
+        for (let globalIdx = currentRenderedEndIdx; globalIdx < targetEndIdx; globalIdx++) {
+          const ad = findAdsState.ads[globalIdx];
+          const el = findAdsState.viewMode === 'compact'
+            ? renderCompactAdRow(ad, globalIdx)
+            : renderAdCard(ad, globalIdx);
+          frag.appendChild(el);
+        }
+        resultsContainer.appendChild(frag);
+        findAdsState.renderedCountOnPage = targetEndIdx - startIdx;
+      }
+    }
+
+    if (selectViewMode) {
+      selectViewMode.addEventListener('change', () => {
+        findAdsState.viewMode = selectViewMode.value || 'card';
+        findAdsState.currentPage = 1;
+        renderCurrentFindAdsPage(true);
+      });
+    }
+
+    if (btnPrevPage) {
+      btnPrevPage.addEventListener('click', () => {
+        if (findAdsState.currentPage > 1) {
+          findAdsState.currentPage--;
+          renderCurrentFindAdsPage(true);
+        }
+      });
+    }
+
+    if (btnNextPage) {
+      btnNextPage.addEventListener('click', () => {
+        const pageSize = getFindAdsPageSize();
+        const totalPages = Math.max(1, Math.ceil(findAdsState.ads.length / pageSize));
+        if (findAdsState.currentPage < totalPages) {
+          findAdsState.currentPage++;
+          renderCurrentFindAdsPage(true);
+        }
+      });
+    }
+
     // ── Function 4: clearResults() ───────────────────────────────────
     function clearResults() {
       findAdsState.ads = [];
+      findAdsState.seenArchiveIds.clear();
       findAdsState.totalFound = 0;
       findAdsState.extractedCount = 0;
       findAdsState.currentBatch = 0;
       findAdsState.totalBatches = 0;
+      findAdsState.currentPage = 1;
+      findAdsState.renderedCountOnPage = 0;
 
       if (resultsContainer) {
         resultsContainer.innerHTML = '';
@@ -2199,6 +2500,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (inoteBanner) inoteBanner.style.display = 'none';
+      updatePaginationBarUI();
       updateProgressUI('READY', 0, 0, 'Sẵn sàng tìm kiếm');
     }
 
@@ -2212,58 +2514,120 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // ── Keyword Clear Button ─────────────────────────────────────────
-    if (btnClearKeyword && inputKeyword) {
-      function updateSearchTypeBadge(isExact) {
-      if (badgeSearchType) {
-        if (isExact) {
-          badgeSearchType.textContent = 'KEYWORD_EXACT_PHRASE';
-          badgeSearchType.style.color = '#38bdf8';
-          badgeSearchType.style.background = 'rgba(56, 189, 248, 0.15)';
-          badgeSearchType.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-          badgeSearchType.title = 'Tìm kiếm cụm từ chính xác (Exact Phrase - \"...\")';
-        } else {
-          badgeSearchType.textContent = 'KEYWORD_UNORDERED';
-          badgeSearchType.style.color = '#818cf8';
-          badgeSearchType.style.background = 'rgba(99, 102, 241, 0.15)';
-          badgeSearchType.style.borderColor = 'rgba(99, 102, 241, 0.3)';
-          badgeSearchType.title = 'Tìm kiếm từ khóa thông thường (Unordered)';
+    function applyPageHunterUIState(isHunter) {
+      if (mineaCounterPanel) {
+        mineaCounterPanel.style.display = isHunter ? 'none' : '';
+      }
+      if (statLabelTotal) {
+        statLabelTotal.textContent = isHunter ? 'Tổng từ khóa' : 'Tổng tìm thấy';
+      }
+      if (statLabelParsed) {
+        statLabelParsed.textContent = isHunter ? 'Page độc nhất' : 'Đã thu thập';
+      }
+      if (isHunter) {
+        if (chkExportPageNameEl) {
+          chkExportPageNameEl.checked = true;
+          if (chkExportContentEl) chkExportContentEl.checked = false;
+          if (chkExportLinksEl) chkExportLinksEl.checked = false;
+          updateExportModeBadgeUI();
         }
+        // Chuyển sang danh sách gọn (50 dòng/trang, 0 video DOM) để hiển thị tên Page mượt 100%
+        findAdsState.viewMode = 'compact';
+        if (selectViewMode) selectViewMode.value = 'compact';
       }
     }
 
-    if (inputKeyword) {
-      inputKeyword.addEventListener('input', () => {
-        const val = inputKeyword.value.trim();
-        const hasQuotes = /^["“'].*["”']$/.test(val);
-        if (hasQuotes) {
-          if (chkExactPhrase) chkExactPhrase.checked = true;
-          updateSearchTypeBadge(true);
-        } else if (chkExactPhrase && !chkExactPhrase.checked) {
-          updateSearchTypeBadge(false);
-        }
-      });
-    }
-
-    if (chkExactPhrase) {
-      chkExactPhrase.addEventListener('change', () => {
-        const checked = chkExactPhrase.checked;
-        let val = inputKeyword ? inputKeyword.value.trim() : '';
-        if (checked) {
-          if (val && !/^["“'].*["”']$/.test(val)) {
-            inputKeyword.value = `"${val}"`;
+    // ── Keyword Clear Button & Inote Auto-Detect ────────────────────
+    if (btnClearKeyword && inputKeyword) {
+      function updateSearchTypeBadge(isExact, isInote = false) {
+        const isHunter = Boolean(chkPageHunter && chkPageHunter.checked);
+        if (badgeSearchType) {
+          if (isHunter) {
+            badgeSearchType.textContent = '🎯 PAGE_HUNTER_TURBO';
+            badgeSearchType.style.color = '#10b981';
+            badgeSearchType.style.background = 'rgba(16, 185, 129, 0.2)';
+            badgeSearchType.style.borderColor = 'rgba(16, 185, 129, 0.45)';
+            badgeSearchType.title = 'Chế độ Page Hunter: Chạy 3 luồng song song, lọc trùng tên Page và tự xuất ra Inote';
+          } else if (isInote) {
+            badgeSearchType.textContent = '📑 INOTE_BATCH_QUEUE';
+            badgeSearchType.style.color = '#34d399';
+            badgeSearchType.style.background = 'rgba(16, 185, 129, 0.15)';
+            badgeSearchType.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+            badgeSearchType.title = 'Tự động tải và quét lần lượt từng dòng từ khóa từ link inote.net';
+          } else if (isExact) {
+            badgeSearchType.textContent = 'KEYWORD_EXACT_PHRASE';
+            badgeSearchType.style.color = '#38bdf8';
+            badgeSearchType.style.background = 'rgba(56, 189, 248, 0.15)';
+            badgeSearchType.style.borderColor = 'rgba(56, 189, 248, 0.3)';
+            badgeSearchType.title = 'Tìm kiếm cụm từ chính xác (Exact Phrase - \"...\")';
+          } else {
+            badgeSearchType.textContent = 'KEYWORD_UNORDERED';
+            badgeSearchType.style.color = '#818cf8';
+            badgeSearchType.style.background = 'rgba(99, 102, 241, 0.15)';
+            badgeSearchType.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+            badgeSearchType.title = 'Tìm kiếm từ khóa thông thường (Unordered)';
           }
-        } else {
-          if (val && /^["“'].*["”']$/.test(val)) {
-            inputKeyword.value = val.replace(/^["“']+|["”']+$/g, '').trim();
-          }
         }
-        updateSearchTypeBadge(checked);
-      });
-    }
+      }
 
-    btnClearKeyword.addEventListener('click', () => {
+      if (chkPageHunter) {
+        chkPageHunter.addEventListener('change', () => {
+          const isHunter = chkPageHunter.checked;
+          applyPageHunterUIState(isHunter);
+          const val = inputKeyword ? inputKeyword.value.trim() : '';
+          updateSearchTypeBadge(
+            Boolean(chkExactPhrase && chkExactPhrase.checked),
+            Boolean(parseInoteUrlInput(val))
+          );
+        });
+      }
+
+      if (inputKeyword) {
+        inputKeyword.addEventListener('input', () => {
+          const val = inputKeyword.value.trim();
+          const inoteDetected = Boolean(parseInoteUrlInput(val));
+          if (inoteDetected) {
+            updateSearchTypeBadge(chkExactPhrase ? chkExactPhrase.checked : false, true);
+            return;
+          }
+          const hasQuotes = /^["“'].*["”']$/.test(val);
+          if (hasQuotes) {
+            if (chkExactPhrase) chkExactPhrase.checked = true;
+            updateSearchTypeBadge(true, false);
+          } else if (chkExactPhrase && !chkExactPhrase.checked) {
+            updateSearchTypeBadge(false, false);
+          } else {
+            updateSearchTypeBadge(Boolean(chkExactPhrase && chkExactPhrase.checked), false);
+          }
+        });
+      }
+
+      if (chkExactPhrase) {
+        chkExactPhrase.addEventListener('change', () => {
+          const checked = chkExactPhrase.checked;
+          let val = inputKeyword ? inputKeyword.value.trim() : '';
+          const inoteUrl = parseInoteUrlInput(val);
+          if (inoteUrl) {
+            inputKeyword.value = inoteUrl;
+            updateSearchTypeBadge(checked, true);
+            return;
+          }
+          if (checked) {
+            if (val && !/^["“'].*["”']$/.test(val)) {
+              inputKeyword.value = `"${val}"`;
+            }
+          } else {
+            if (val && /^["“'].*["”']$/.test(val)) {
+              inputKeyword.value = val.replace(/^["“']+|["”']+$/g, '').trim();
+            }
+          }
+          updateSearchTypeBadge(checked, false);
+        });
+      }
+
+      btnClearKeyword.addEventListener('click', () => {
         inputKeyword.value = '';
+        updateSearchTypeBadge(Boolean(chkExactPhrase && chkExactPhrase.checked), false);
         inputKeyword.focus();
       });
     }
@@ -2331,8 +2695,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (emptyState) emptyState.style.display = 'none';
 
         findAdsState.isSearching = true;
-        updateProgressUI('SEARCHING', 0, 0, 'Đang gửi truy vấn tới Facebook Ads Library...');
-        updateMineaCounterUI({ status: 'LOADING' });
+        applyPageHunterUIState(Boolean(params.isPageHunter));
+        if (params.isPageHunter) {
+          updateProgressUI('SEARCHING', 0, 0, '🎯 Page Hunter: Đang khởi tạo 3 luồng săn tên Page...');
+        } else {
+          updateProgressUI('SEARCHING', 0, 0, 'Đang gửi truy vấn tới Facebook Ads Library...');
+          updateMineaCounterUI({ status: 'LOADING' });
+        }
 
         // Dispatch action to background service worker (single dispatch)
         chrome.runtime.sendMessage({
@@ -2539,61 +2908,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Protocol 1: SEARCH_PROGRESS_UPDATE
       if (message.action === 'SEARCH_PROGRESS_UPDATE') {
-        const { status, currentPage, totalFound, extractedCount, batchAds, error } = message.payload || {};
+        const { status, currentPage, totalFound, extractedCount, batchAds, error, statusMessage, isPageHunter, autoNoteResult } = message.payload || {};
 
         if (Array.isArray(batchAds) && batchAds.length > 0) {
-          if (emptyState) emptyState.style.display = 'none';
           batchAds.forEach(ad => {
-            // Avoid duplicate by archive_id
-            const exists = findAdsState.ads.some(a => String(a.archive_id) === String(ad.archive_id));
-            if (!exists) {
-              const idx = findAdsState.ads.length;
+            const key = String(ad.archive_id || '');
+            if (key && !findAdsState.seenArchiveIds.has(key)) {
+              findAdsState.seenArchiveIds.add(key);
               findAdsState.ads.push(ad);
-              if (resultsContainer) {
-                const card = renderAdCard(ad, idx);
-                resultsContainer.appendChild(card);
-              }
+            } else if (!key) {
+              findAdsState.ads.push(ad);
             }
           });
+          appendIncomingBatchToCurrentPage();
         }
 
         if (status === 'COMPLETED') {
           findAdsState.isSearching = false;
-          updateProgressUI('COMPLETED', extractedCount || findAdsState.ads.length, totalFound || findAdsState.ads.length, `Đã thu thập trọn vẹn ${findAdsState.ads.length} ads`);
+          updatePaginationBarUI();
+          updateProgressUI('COMPLETED', extractedCount || findAdsState.ads.length, totalFound || findAdsState.ads.length, statusMessage || `Đã thu thập trọn vẹn ${findAdsState.ads.length} ads`);
+
+          if (autoNoteResult && autoNoteResult.noteUrl) {
+            findAdsState.lastNoteUrl = autoNoteResult.noteUrl;
+            findAdsState.lastNoteId = autoNoteResult.noteId || '';
+            if (inoteBanner && inoteLink) {
+              inoteBanner.style.display = 'flex';
+              inoteLink.href = autoNoteResult.noteUrl;
+              inoteLink.textContent = autoNoteResult.noteUrl;
+            }
+            copyText(autoNoteResult.noteUrl);
+          } else if ((isPageHunter || (chkPageHunter && chkPageHunter.checked)) && findAdsState.ads.length > 0 && btnSaveInote) {
+            // Dự phòng: Nếu background chưa kịp tạo Inote thì Side Panel tự động kích hoạt Lưu Vào inote.net
+            btnSaveInote.click();
+          }
         } else if (status === 'ERROR') {
           findAdsState.isSearching = false;
           updateProgressUI('ERROR', findAdsState.ads.length, findAdsState.totalFound, error || 'Có lỗi xảy ra');
         } else {
-          updateProgressUI(status || 'SEARCHING', extractedCount || findAdsState.ads.length, totalFound || findAdsState.totalFound, `Đang xử lý Batch ${currentPage || 1}...`);
+          updateProgressUI(status || 'SEARCHING', extractedCount || findAdsState.ads.length, totalFound || findAdsState.totalFound, statusMessage || `Đang xử lý Batch ${currentPage || 1}...`);
         }
       }
 
       // Protocol 2: FIND_ADS_BATCH_RECEIVED / FIND_ADS_PROGRESS / FIND_ADS_COMPLETED
       else if (message.action === 'FIND_ADS_BATCH_RECEIVED') {
-        const { batchAds, totalCount, batchNumber } = message.payload || {};
+        const { batchAds, totalCount, batchNumber, statusMessage } = message.payload || {};
         if (Array.isArray(batchAds) && batchAds.length > 0) {
-          if (emptyState) emptyState.style.display = 'none';
           batchAds.forEach(ad => {
-            const exists = findAdsState.ads.some(a => String(a.archive_id) === String(ad.archive_id));
-            if (!exists) {
-              const idx = findAdsState.ads.length;
+            const key = String(ad.archive_id || '');
+            if (key && !findAdsState.seenArchiveIds.has(key)) {
+              findAdsState.seenArchiveIds.add(key);
               findAdsState.ads.push(ad);
-              if (resultsContainer) {
-                const card = renderAdCard(ad, idx);
-                resultsContainer.appendChild(card);
-              }
+            } else if (!key) {
+              findAdsState.ads.push(ad);
             }
           });
+          appendIncomingBatchToCurrentPage();
         }
-        updateProgressUI('PROCESSING_ADS', findAdsState.ads.length, totalCount || findAdsState.totalFound, `Batch ${batchNumber || 1} đã nhận (+${(batchAds || []).length})`);
+        updateProgressUI('PROCESSING_ADS', findAdsState.ads.length, totalCount || findAdsState.totalFound, statusMessage || `Batch ${batchNumber || 1} đã nhận (+${(batchAds || []).length})`);
       } else if (message.action === 'FIND_ADS_PROGRESS') {
         const { parsedCount, totalCount, statusText: msg } = message.payload || {};
         updateProgressUI('SEARCHING', parsedCount, totalCount, msg);
       } else if (message.action === 'FIND_ADS_COMPLETED') {
-        const { totalParsed, totalFound } = message.payload || {};
+        const { totalParsed, totalFound, statusMessage } = message.payload || {};
         findAdsState.isSearching = false;
         const preservedTotal = totalFound || findAdsState.totalFound || totalParsed || findAdsState.ads.length;
-        updateProgressUI('COMPLETED', totalParsed || findAdsState.ads.length, preservedTotal, 'Thu thập hoàn tất 100%');
+        updateProgressUI('COMPLETED', totalParsed || findAdsState.ads.length, preservedTotal, statusMessage || 'Thu thập hoàn tất 100%');
       } else if (message.action === 'INOTE_SAVE_RESULT') {
         const { success, noteUrl, noteId } = message.payload || {};
         if (success && noteUrl) {
@@ -2621,6 +3000,9 @@ document.addEventListener('DOMContentLoaded', () => {
       formatNumberWithoutDecimals,
       formatNumberCompact,
       renderAdCard,
+      renderCompactAdRow,
+      renderCurrentFindAdsPage,
+      updatePaginationBarUI,
       formatAdToInoteText,
       formatAllAdsToInoteText,
       clearResults

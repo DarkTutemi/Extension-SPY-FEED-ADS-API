@@ -500,10 +500,10 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
       <div class="form-row">
         <label for="find-ads-keyword" class="find-ads-label-row">
           <span>Từ khóa tìm kiếm / Advertiser:</span>
-          <span class="find-ads-hint">Hỗ trợ từ khóa hoặc tên Page</span>
+          <span class="find-ads-hint">Từ khóa, Tên Page hoặc dán link inote.net/...</span>
         </label>
         <div class="input-wrapper find-ads-input-wrap">
-          <input type="text" id="find-ads-keyword" class="find-ads-input" placeholder="Nhập từ khóa tìm kiếm (ví dụ: DallasWind US)..." value="DallasWind US">
+          <input type="text" id="find-ads-keyword" class="find-ads-input" placeholder="Nhập từ khóa, tên Page hoặc dán link https://inote.net/..." value="DallasWind US">
           <button type="button" id="btn-find-ads-clear-keyword" class="btn-clear-keyword" title="Xóa trắng">&times;</button>
         </div>
         <!-- Exact Phrase Search Option -->
@@ -513,6 +513,13 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
             <span>Tìm kiếm cụm từ chính xác (Exact phrase: <code>"..."</code>)</span>
           </label>
           <span class="status-badge" id="find-ads-search-type-badge" style="font-size: 10px; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 2px 6px; border-radius: 4px;" title="Chế độ khớp từ khóa Meta GraphQL">KEYWORD_UNORDERED</span>
+        </div>
+        <!-- Page Hunter Turbo Mode Option -->
+        <div class="find-ads-page-hunter-row" style="margin-top: 6px; padding: 5px 8px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.28); border-radius: 6px; display: flex; align-items: center; justify-content: space-between;">
+          <label for="chk-page-hunter-mode" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #34d399; cursor: pointer; user-select: none;" title="Chạy 3 luồng song song, bỏ qua Active/Total Camp, lọc trùng tên Page và tự động xuất thẳng ra Inote">
+            <input type="checkbox" id="chk-page-hunter-mode" class="find-ads-checkbox" style="accent-color: #10b981; width: 14px; height: 14px; cursor: pointer;">
+            <span>🎯 Chế độ Page Hunter (Siêu tốc 3 luồng - Chỉ cào tên Page &amp; Tự xuất Inote)</span>
+          </label>
         </div>
       </div>
 
@@ -717,15 +724,15 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
     <!-- Progress Container & Pagination Stats -->
     <section class="stats-grid find-ads-metrics">
       <div class="stat-card">
-        <span class="stat-label">Tổng tìm thấy</span>
+        <span class="stat-label" id="find-ads-stat-label-total">Tổng tìm thấy</span>
         <span class="stat-val find-ads-cyan-val" id="find-ads-total-count">0</span>
       </div>
       <div class="stat-card highlight">
-        <span class="stat-label">Đã thu thập</span>
+        <span class="stat-label" id="find-ads-stat-label-parsed">Đã thu thập</span>
         <span class="stat-val find-ads-emerald-val" id="find-ads-parsed-count">0</span>
       </div>
       <div class="stat-card">
-        <span class="stat-label">Đang xử lý / Batch</span>
+        <span class="stat-label" id="find-ads-stat-label-batch">Đang xử lý / Batch</span>
         <span class="stat-val find-ads-batch-val" id="find-ads-batch-progress">Sẵn sàng</span>
       </div>
     </section>
@@ -752,6 +759,10 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
             <input type="checkbox" id="chk-export-only-links" class="find-ads-checkbox" style="accent-color: #6366f1; width: 14px; height: 14px; cursor: pointer;">
             <span>Chỉ lấy đường dẫn đích (Link)</span>
           </label>
+          <label for="chk-export-only-page-name" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #cbd5e1; cursor: pointer; user-select: none;">
+            <input type="checkbox" id="chk-export-only-page-name" class="find-ads-checkbox" style="accent-color: #6366f1; width: 14px; height: 14px; cursor: pointer;">
+            <span>Chỉ lấy tên Page</span>
+          </label>
         </div>
       </div>
       <!-- Large prominent inote.net save button -->
@@ -777,6 +788,23 @@ https://gravityglidersco.com/products/gravity-glider?fbclid=IwY2xjawVS9gZleHRuA2
           <a href="#" target="_blank" id="inote-created-url-link" class="inote-alert-link">https://inote.net/...</a>
         </div>
         <button type="button" id="btn-copy-inote-link-quick" class="btn-copy-inote-quick">Copy Link</button>
+      </div>
+
+      <!-- View Mode & Virtual Pagination Toolbar (Anti-Lag for 100s of Ads) -->
+      <div id="find-ads-view-pagination-bar" class="find-ads-view-toolbar">
+        <div class="find-ads-view-mode-wrap">
+          <label for="find-ads-view-mode" class="find-ads-view-label">Hiển thị:</label>
+          <select id="find-ads-view-mode" class="find-ads-view-select" title="Chọn chế độ hiển thị để tối ưu hiệu năng khi quét hàng trăm kết quả">
+            <option value="card" selected>🗂️ Thẻ chi tiết (20/trang)</option>
+            <option value="compact">📋 Danh sách thu gọn (50/trang)</option>
+            <option value="data_only">⚡ Siêu tốc (Ẩn thẻ - Chỉ xuất Inote)</option>
+          </select>
+        </div>
+        <div class="find-ads-pagination-controls" id="find-ads-pagination-controls">
+          <button type="button" class="btn-page-nav" id="btn-find-ads-prev-page" disabled title="Trang trước">«</button>
+          <span class="find-ads-page-info" id="find-ads-page-info">Trang 1/1 (0)</span>
+          <button type="button" class="btn-page-nav" id="btn-find-ads-next-page" disabled title="Trang tiếp theo">»</button>
+        </div>
       </div>
     </div>
 

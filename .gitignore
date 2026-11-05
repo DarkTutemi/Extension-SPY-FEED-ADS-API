@@ -10,6 +10,7 @@ scratch/
 .agents/
 __pycache__/
 *.pyc
+*.log
 
 Revert-API-chatbot/
 ecc/

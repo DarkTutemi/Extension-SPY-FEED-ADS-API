@@ -464,6 +464,232 @@ async function runAll() {
     assert(verifyHtml.includes('Testing live integration note'), 'Note HTML must contain our saved content');
   });
 
+  // ────────────────────────────────────────────────────────────────────
+  // TEST 11: InoteService.formatAllAds with 'page_name' mode
+  // ────────────────────────────────────────────────────────────────────
+  await runStep('InoteService.formatAllAds supports page_name deduplicated export', () => {
+    const ads = [
+      { archive_id: '1', page_name: 'DallasWind US', caption_text: 'A' },
+      { archive_id: '2', page_name: 'DallasWind US', caption_text: 'B' },
+      { archive_id: '3', page_name: 'TechGadget Store', caption_text: 'C' }
+    ];
+    const pageNamesOnly = InoteService.formatAllAds(ads, 'page_name');
+    assert.strictEqual(pageNamesOnly, 'DallasWind US\nTechGadget Store');
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // TEST 12: InoteService.parseInoteUrl & Live fetchKeywordsFromNote
+  // ────────────────────────────────────────────────────────────────────
+  await runStep('InoteService.parseInoteUrl & live fetchKeywordsFromNote(XUjCy13YJ6)', async () => {
+    assert.strictEqual(InoteService.parseInoteUrl('https://inote.net/XUjCy13YJ6'), 'https://inote.net/XUjCy13YJ6');
+    assert.strictEqual(InoteService.parseInoteUrl('"https://inote.net/XUjCy13YJ6"'), 'https://inote.net/XUjCy13YJ6');
+    assert.strictEqual(InoteService.parseInoteUrl('inote.net/XUjCy13YJ6'), 'https://inote.net/XUjCy13YJ6');
+    assert.strictEqual(InoteService.parseInoteUrl('DallasWind US'), null);
+
+    const keywords = await InoteService.fetchKeywordsFromNote('https://inote.net/XUjCy13YJ6');
+    assert(Array.isArray(keywords) && keywords.length > 50, `Expected >50 keywords, got ${keywords.length}`);
+    assert(keywords[0].includes('Car Rear-Seat Memory Foam Travel Mattress'), 'First line should match expected keyword');
+    assert(keywords.every(k => k.trim().length > 0), 'No empty lines should remain');
+    console.log(`     Fetched ${keywords.length} non-empty keyword lines from https://inote.net/XUjCy13YJ6`);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // TEST 13: AdsLibraryGraphQLService.searchInoteKeywordBatch (Sequential + Dedup)
+  // ────────────────────────────────────────────────────────────────────
+  await runStep('searchInoteKeywordBatch runs keywords sequentially and deduplicates archive_id', async () => {
+    const svc = new AdsLibraryGraphQLService();
+    svc.ensureAuthentication = async () => ({
+      fb_dtsg: 'test_dtsg',
+      lsd: 'test_lsd'
+    });
+
+    const originalFetchNote = InoteService.fetchKeywordsFromNote;
+    try {
+      InoteService.fetchKeywordsFromNote = async () => ['Keyword One', 'Keyword Two'];
+
+      const queriedKeywords = [];
+      svc.searchAndPaginateAll = async (stepParams, onStepProgress) => {
+        queriedKeywords.push({ keyword: stepParams.keyword, isExactPhrase: stepParams.isExactPhrase });
+        if (stepParams.keyword === '"Keyword One"') {
+          const ads1 = [
+            { archive_id: 'AD_101', page_name: 'Page Alpha', is_active: true, caption_text: 'Ad 101' },
+            { archive_id: 'AD_102', page_name: 'Page Beta', is_active: true, caption_text: 'Ad 102' }
+          ];
+          onStepProgress({ status: 'PROCESSING_ADS', totalFound: 2, extractedCount: 2, batchAds: ads1 });
+          return ads1;
+        }
+        const ads2 = [
+          // AD_102 is a duplicate from Keyword One -> should be deduplicated
+          { archive_id: 'AD_102', page_name: 'Page Beta', is_active: true, caption_text: 'Ad 102' },
+          { archive_id: 'AD_103', page_name: 'Page Gamma', is_active: true, caption_text: 'Ad 103' }
+        ];
+        onStepProgress({ status: 'PROCESSING_ADS', totalFound: 2, extractedCount: 2, batchAds: ads2 });
+        return ads2;
+      };
+
+      const progressEvents = [];
+      const batchRes = await svc.searchInoteKeywordBatch(
+        'https://inote.net/TESTBATCH',
+        { keyword: 'https://inote.net/TESTBATCH', isExactPhrase: true, country: 'US' },
+        (prog) => progressEvents.push(prog)
+      );
+
+      assert.strictEqual(queriedKeywords.length, 2);
+      assert.strictEqual(queriedKeywords[0].keyword, '"Keyword One"');
+      assert.strictEqual(queriedKeywords[1].keyword, '"Keyword Two"');
+      assert.strictEqual(batchRes.length, 3, 'Should deduplicate AD_102 and return 3 unique ads');
+      assert(progressEvents.some(p => p.statusMessage && p.statusMessage.includes('[Từ khóa 1/2]')));
+      assert(progressEvents.some(p => p.statusMessage && p.statusMessage.includes('[Từ khóa 2/2]')));
+    } finally {
+      InoteService.fetchKeywordsFromNote = originalFetchNote;
+    }
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // TEST 14: Page Hunter Mode (3 Concurrent Workers + Retry + Dedup + Auto Inote Export)
+  // ────────────────────────────────────────────────────────────────────
+  await runStep('runPageHunterBatch runs 3 concurrent workers, retries transient failures, deduplicates page_name, and auto-exports to inote.net', async () => {
+    const svc = new AdsLibraryGraphQLService();
+    svc.ensureAuthentication = async () => ({
+      fb_dtsg: 'test_dtsg',
+      lsd: 'test_lsd'
+    });
+
+    const originalFetchNote = InoteService.fetchKeywordsFromNote;
+    const originalCreateNote = InoteService.createNote;
+    const originalFetch = global.fetch;
+
+    try {
+      // Include a duplicate keyword line ("Line 1" and "line 1") to verify input deduplication
+      InoteService.fetchKeywordsFromNote = async () => [
+        'Line 1',
+        'line 1',
+        'Line 2',
+        'Line 3',
+        'Line 4'
+      ];
+
+      let autoSavedText = null;
+      InoteService.createNote = async (textPayload) => {
+        autoSavedText = textPayload;
+        return {
+          success: true,
+          noteId: 'PAGEHUNTER99',
+          noteUrl: 'https://inote.net/PAGEHUNTER99'
+        };
+      };
+
+      let line2Attempts = 0;
+      global.fetch = async (url, opts) => {
+        const bodyParams = new URLSearchParams(opts.body);
+        const vars = JSON.parse(bodyParams.get('variables'));
+        const q = vars.queryString;
+
+        // Simulate transient HTTP 500 on first attempt of Line 2 to prove retry never misses a Page
+        if (q.includes('Line 2')) {
+          line2Attempts++;
+          if (line2Attempts === 1) {
+            return { ok: false, status: 500 };
+          }
+          return {
+            ok: true,
+            text: async () => JSON.stringify({
+              data: {
+                ad_library_main: {
+                  search_results_connection: {
+                    count: 2,
+                    edges: [
+                      { node: { collated_results: [{ ad_archive_id: '201', page_id: 'P2', page_name: 'Beta Store US' }] } },
+                      { node: { collated_results: [{ ad_archive_id: '202', page_id: 'P1', page_name: 'dallaswind us' }] } }
+                    ],
+                    page_info: { has_next_page: false, end_cursor: null }
+                  }
+                }
+              }
+            })
+          };
+        }
+
+        if (q.includes('Line 1')) {
+          return {
+            ok: true,
+            text: async () => JSON.stringify({
+              data: {
+                ad_library_main: {
+                  search_results_connection: {
+                    count: 1,
+                    edges: [
+                      { node: { collated_results: [{ ad_archive_id: '101', page_id: 'P1', page_name: 'DallasWind US' }] } }
+                    ],
+                    page_info: { has_next_page: false, end_cursor: null }
+                  }
+                }
+              }
+            })
+          };
+        }
+
+        if (q.includes('Line 3')) {
+          return {
+            ok: true,
+            text: async () => JSON.stringify({
+              data: {
+                ad_library_main: {
+                  search_results_connection: {
+                    count: 1,
+                    edges: [
+                      { node: { collated_results: [{ ad_archive_id: '301', page_id: 'P3', page_name: 'Gamma Gadgets' }] } }
+                    ],
+                    page_info: { has_next_page: false, end_cursor: null }
+                  }
+                }
+              }
+            })
+          };
+        }
+
+        return {
+          ok: true,
+          text: async () => JSON.stringify({
+            data: {
+              ad_library_main: {
+                search_results_connection: {
+                  count: 1,
+                  edges: [
+                    { node: { collated_results: [{ ad_archive_id: '401', page_id: 'P4', page_name: 'Omega Home' }] } }
+                  ],
+                  page_info: { has_next_page: false, end_cursor: null }
+                }
+              }
+            }
+          })
+        };
+      };
+
+      const progressEvents = [];
+      const pages = await svc.runPageHunterBatch(
+        'https://inote.net/XUjCy13YJ6',
+        { isPageHunter: true, country: 'US', openInoteTab: false },
+        (prog) => progressEvents.push(prog)
+      );
+
+      assert(line2Attempts >= 2, 'Line 2 must retry after transient HTTP 500 and succeed on retry');
+      assert.strictEqual(pages.length, 4, 'Must collect all 4 unique pages and deduplicate "DallasWind US" vs "dallaswind us"');
+      const names = pages.map(p => p.page_name);
+      assert(names.includes('DallasWind US'));
+      assert(names.includes('Beta Store US'));
+      assert(names.includes('Gamma Gadgets'));
+      assert(names.includes('Omega Home'));
+      assert.strictEqual(autoSavedText, names.join('\n'), 'Auto-exported Inote text must contain the exact 4 unique page names');
+      const completedEvt = progressEvents.find(p => p.status === 'COMPLETED');
+      assert(completedEvt && completedEvt.autoNoteResult && completedEvt.autoNoteResult.noteUrl === 'https://inote.net/PAGEHUNTER99');
+    } finally {
+      InoteService.fetchKeywordsFromNote = originalFetchNote;
+      InoteService.createNote = originalCreateNote;
+      global.fetch = originalFetch;
+    }
+  });
+
   console.log('\n======================================================');
   console.log(`🎉 ALL ${passedTests}/${totalTests} TESTS PASSED SUCCESSFULLY (Exit Code: 0)`);
   console.log('======================================================\n');
